@@ -1,0 +1,8 @@
+*.pcap
+*.pdf
+*.pyc
+*.log
+*.csv
+*.txt
+*.pkl
+*.DS_Store
