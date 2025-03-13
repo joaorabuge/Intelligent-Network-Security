@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card mt-4">
+    <div class="card-body">
+        <h5 class="card-title">Real-Time Traffic Analysis</h5>
+        <form method="POST" action="{{ url_for('realtime') }}">
+            <div class="mb-3">
+                <label for="interface">Interface:</label>
+                <select class="form-select" id="interface" name="interface" required>
+                    {% for interface in active_interfaces %}
+                        <option value="{{ interface }}">{{ interface }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="duration">Duration (seconds)</label>
+                <input type="number" class="form-control" name="duration" id="duration" min="1" required>
+            </div>
+            <div class="mb-3">
+                <label for="password">Administrator Password (if needed)</label>
+                <input type="password" class="form-control" id="password" name="password" placeholder="Enter the password">
+            </div>
+            <button class="btn btn-info">Start Capture</button>
+        </form>
+    </div>
+</div>
+
+<div class="text-center mt-4">
+    <a href="{{ url_for('dashboard') }}" class="btn btn-info">Back to Dashboard</a>
+</div>
+
+{% endblock %}

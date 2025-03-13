@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card mt-4">
+    <div class="card-body">
+        <h5 class="card-title">Upload PCAP File for Analysis</h5>
+        <form method="POST" action="{{ url_for('process_pcap_file') }}" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label class="form-label">PCAP File:</label>
+                <input type="file" name="pcap_file" class="form-control" required>
+            </div>
+            <button class="btn btn-info">Process File</button>
+        </form>
+    </div>
+</div>
+
+<div class="text-center mt-4">
+    <a href="{{ url_for('dashboard') }}" class="btn btn-info">Back to Dashboard</a>
+</div>
+
+{% endblock %}

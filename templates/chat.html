@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2 class="text-center mb-4 text-white">Mitigation Chatbot</h2>
+  
+  <!-- Chat Box -->
+  <div id="chat-box" class="border rounded p-3" style="height:400px; overflow-y: auto; background-color: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px);">
+    <!-- Chat messages will appear here -->
+  </div>
+
+  <!-- Chat Input Form -->
+  <form id="chat-form" class="mt-3">
+    <div class="input-group">
+      <input type="text" class="form-control bg-dark text-white" id="message" placeholder="Type your question..." autocomplete="off">
+      <button class="btn btn-info" type="submit">Send</button>
+    </div>
+  </form>
+</div>
+<div class="text-center mt-4">
+  <a href="{{ url_for('home') }}" class="btn btn-info">Back to Home</a>
+</div>
+
+<style>
+  /* Chat bubble styles */
+  .chat-message {
+    max-width: 80%;
+    padding: 10px 15px;
+    margin-bottom: 10px;
+    border-radius: 15px;
+    line-height: 1.4;
+    word-wrap: break-word;
+  }
+
+  .chat-message.user {
+    background-color: #007bff;
+    color: #fff;
+    border-bottom-right-radius: 0;
+    align-self: flex-end;
+  }
+
+  .chat-message.bot {
+    background-color: #6c757d;
+    color: #fff;
+    border-bottom-left-radius: 0;
+    align-self: flex-start;
+  }
+
+  .chat-label {
+    font-size: 0.8rem;
+    font-weight: bold;
+    display: block;
+    margin-bottom: 5px;
+  }
+
+  /* Chat Box Styles */
+  #chat-box {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+  }
+
+  /* Input Styles */
+  .form-control {
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  .form-control::placeholder {
+    color: #cfd8dc;
+  }
+
+  .form-control:focus {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-color: #4ea8de;
+  }
+</style>
+
+<script>
+// Helper function to format the chatbot's raw text into HTML with line breaks and bullet points.
+function formatChatbotResponse(text) {
+    let formatted = text.replace(/•/g, "<br>•");
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+
+// Function to append a message to the chat box.
+function appendMessage(sender, text) {
+  const chatBox = document.getElementById("chat-box");
+  const msgDiv = document.createElement("div");
+  msgDiv.classList.add("chat-message", sender === "user" ? "user" : "bot");
+  msgDiv.innerHTML = `<span class="chat-label">${sender === "user" ? "You:" : "Chatbot:"}</span>${text}`;
+  msgDiv.style.textAlign = sender === "user" ? "right" : "left";
+  chatBox.appendChild(msgDiv);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+document.getElementById("chat-form").addEventListener("submit", function(e) {
+    e.preventDefault();
+    const messageInput = document.getElementById("message");
+    const message = messageInput.value.trim();
+    if (!message) return;
+    appendMessage("user", message);
+    messageInput.value = "";
+    
+    fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "message=" + encodeURIComponent(message)
+    })
+    .then(response => response.json())
+    .then(data => {
+        let formattedResponse = formatChatbotResponse(data.response);
+        appendMessage("bot", formattedResponse);
+    })
+    .catch(error => console.error("Error:", error));
+});
+
+    // Handle flash message transitions without a timer
+    window.addEventListener('DOMContentLoaded', (event) => {
+      let alerts = document.querySelectorAll('.alert');
+      alerts.forEach((alert) => {
+        // Add the 'show' class to trigger the fade-in transition
+        alert.classList.add('show');
+      });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card shadow-sm border-0 p-4">
+            <h3 class="text-center mb-4">Create Your Account</h3>
+            <form method="POST">
+                <!-- Exibindo mensagem de erro ou sucesso -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <ul class="list-unstyled">
+                            {% for category, message in messages %}
+                                <li class="alert alert-{{ category }}">
+                                    {{ message }}
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                {% endwith %}
+                
+                <div class="mb-3">
+                    <label for="username" class="form-label">Username</label>
+                    <input type="text" class="form-control" id="username" name="username" placeholder="Choose a username" required>
+                </div>
+                <div class="mb-3">
+                    <label for="email" class="form-label">Email Address</label>
+                    <input type="email" class="form-control" id="email" name="email" placeholder="name@example.com" required>
+                </div>
+                <div class="mb-3">
+                    <label for="password" class="form-label">Password</label>
+                    <input type="password" class="form-control" id="password" name="password" placeholder="Enter your password" required>
+                </div>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary btn-lg">Register</button>
+                </div>
+                <div class="text-center mt-3">
+                    <small class="text-muted">
+                        Already have an account? <a href="{{ url_for('login') }}">Login here</a>
+                    </small>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+<script>
+    // Handle flash message transitions without a timer
+    window.addEventListener('DOMContentLoaded', (event) => {
+      let alerts = document.querySelectorAll('.alert');
+      alerts.forEach((alert) => {
+        // Add the 'show' class to trigger the fade-in transition
+        alert.classList.add('show');
+      });
+    });
+  </script>
+{% endblock %}

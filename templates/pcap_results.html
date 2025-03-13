@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2 class="text-center mb-4">PCAP Analysis Results</h2>
+
+    <!-- Display flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} text-center" role="alert">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Results Summary -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <h5 class="card-title">Summary</h5>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item">Total Packets: <strong>{{ results|length }}</strong></li>
+                <li class="list-group-item">Benign Packets: <strong>{{ graph_data.benign_count }}</strong></li>
+                <li class="list-group-item">Malicious Packets: <strong>{{ graph_data.malign_count }}</strong></li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Packet Distribution Chart -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <h5 class="card-title text-center">Packet Distribution</h5>
+            <canvas id="trafficChart" style="max-height: 400px;"></canvas>
+        </div>
+    </div>
+
+    <!-- Attack Types Chart (If Any) -->
+    {% if graph_data.attack_types %}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <h5 class="card-title text-center">Attack Types</h5>
+            <canvas id="attackChart" style="max-height: 400px;"></canvas>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Back Button -->
+    <div class="text-center">
+        <a href="{{ url_for('dashboard') }}" class="btn btn-info">Back to Dashboard</a>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Traffic Distribution Chart
+    const trafficCtx = document.getElementById('trafficChart').getContext('2d');
+    new Chart(trafficCtx, {
+        type: 'pie',
+        data: {
+            labels: ['Benign', 'Malicious'],
+            datasets: [{
+                data: [{{ graph_data.benign_count }}, {{ graph_data.malign_count }}],
+                backgroundColor: ['#28a745', '#dc3545']
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'top' }}
+        }
+    });
+
+    // Attack Types Chart
+    {% if graph_data.attack_types %}
+    const attackCtx = document.getElementById('attackChart').getContext('2d');
+    const attackLabels = Object.keys({{ graph_data.attack_types | tojson }});
+    const attackValues = Object.values({{ graph_data.attack_types | tojson }});
+
+    new Chart(attackCtx, {
+        type: 'bar',
+        data: {
+            labels: attackLabels,
+            datasets: [{
+                label: 'Number of Packets',
+                data: attackValues,
+                backgroundColor: '#fd7e14'
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+    {% endif %}
+
+    // Handle flash message transitions without a timer
+    window.addEventListener('DOMContentLoaded', (event) => {
+      let alerts = document.querySelectorAll('.alert');
+      alerts.forEach((alert) => {
+        // Add the 'show' class to trigger the fade-in transition
+        alert.classList.add('show');
+      });
+    });
+
+</script>
+{% endblock %}

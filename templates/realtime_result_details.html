@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="text-center mb-4 text-white">Real-Time Result Details</h2>
+
+    <div class="card bg-dark text-light mb-4 shadow-sm">
+        <div class="card-body">
+            <h5 class="card-title">Summary</h5>
+            <p class="card-text"><strong>Timestamp:</strong> {{ result.timestamp }}</p>
+        </div>
+    </div>
+
+    <!-- Packet Distribution Chart -->
+    <div class="card bg-dark text-light mb-4 shadow-sm">
+        <div class="card-body text-center">
+            <h5 class="card-title">Packet Distribution</h5>
+                <canvas id="trafficChart" style="max-height: 400px;"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Attack Types Chart -->
+    {% if graph_data.attack_types and graph_data.attack_types|length > 0 %}
+    <div class="card bg-dark text-light mb-4 shadow-sm">
+        <div class="card-body text-center">
+            <h5 class="card-title">Attack Types</h5>
+            <div style="position: relative; max-width: 600px; margin: auto;">
+                <canvas id="attackChart" style="max-height: 400px;"></canvas>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="card bg-dark text-light mb-4 shadow-sm">
+        <div class="card-body text-center">
+            <h5 class="card-title text-muted">No Attacks Detected</h5>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Buttons -->
+<!-- Buttons with better spacing -->
+<div class="d-flex justify-content-center gap-3 mt-4">
+    <a href="{{ url_for('results') }}" class="btn btn-info px-4">Back to Results</a>
+    <form method="POST" action="{{ url_for('delete_realtime_result', result_id=result.id) }}">
+        <button type="submit" class="btn btn-danger px-4">Delete Record</button>
+    </form>
+</div>
+
+
+<!-- JavaScript for Charts -->
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        console.log("Initializing Charts...");
+
+        // Traffic Chart (Pie Chart)
+        const trafficCanvas = document.getElementById('trafficChart');
+        if (trafficCanvas) {
+            new Chart(trafficCanvas.getContext('2d'), {
+                type: 'pie',
+                data: {
+                    labels: ['Benign', 'Malicious'],
+                    datasets: [{
+                        data: [
+                            {{ graph_data.benign_count }},
+                            {{ graph_data.malign_count if graph_data.malign_count > 0 else 0 }}
+                        ],
+                        backgroundColor: ['#28a745', '#dc3545']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,  // Ensures the chart respects max-height
+                    plugins: {
+                        legend: { position: 'top' }
+                    }
+                }
+            });
+        }
+
+        // Attack Types Chart (Bar Chart)
+        {% if graph_data.attack_types and graph_data.attack_types|length > 0 %}
+        const attackCanvas = document.getElementById('attackChart');
+        if (attackCanvas) {
+            const attackLabels = Object.keys({{ graph_data.attack_types | tojson }});
+            const attackValues = Object.values({{ graph_data.attack_types | tojson }});
+
+            new Chart(attackCanvas.getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: attackLabels,
+                    datasets: [{
+                        data: attackValues,
+                        backgroundColor: '#fd7e14'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,  // Prevents oversized charts
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+        {% endif %}
+    });
+</script>
+{% endblock %}
