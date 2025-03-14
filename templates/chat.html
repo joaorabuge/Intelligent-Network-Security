@@ -4,6 +4,25 @@
 <div class="container mt-4">
   <h2 class="text-center mb-4 text-white"><strong>Mitigation Chatbot</strong></h2>
   
+  
+  <!-- Context Selection -->
+  {% if contexts %}
+  <div class="mb-3">
+    <label for="context_id" class="form-label text-white">Choose Analysis Context:</label>
+    <select id="context_id" name="context_id" class="form-select bg-dark text-white">
+      {% for context in contexts %}
+      <option value="{{ context.id }}">
+        {{ context.file_path }} - {{ context.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  {% else %}
+  <div class="alert alert-warning">
+    No analysis context available. Please run an analysis first.
+  </div>
+  {% endif %}
+  
   <!-- Chat Box -->
   <div id="chat-box" class="border rounded p-3" style="height:400px; overflow-y: auto; background-color: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px);">
     <!-- Chat messages will appear here -->
@@ -103,11 +122,18 @@ document.getElementById("chat-form").addEventListener("submit", function(e) {
     if (!message) return;
     appendMessage("user", message);
     messageInput.value = "";
-    
+
+    // Retrieve selected context id from the dropdown
+    let contextSelect = document.getElementById("context_id");
+    let contextId = contextSelect ? contextSelect.value : "";
+
+    // Build the POST data string including both message and context id
+    const postData = "message=" + encodeURIComponent(message) + "&context_id=" + encodeURIComponent(contextId);
+
     fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "message=" + encodeURIComponent(message)
+        body: postData
     })
     .then(response => response.json())
     .then(data => {
@@ -117,13 +143,13 @@ document.getElementById("chat-form").addEventListener("submit", function(e) {
     .catch(error => console.error("Error:", error));
 });
 
-    // Handle flash message transitions without a timer
-    window.addEventListener('DOMContentLoaded', (event) => {
-      let alerts = document.querySelectorAll('.alert');
-      alerts.forEach((alert) => {
-        // Add the 'show' class to trigger the fade-in transition
-        alert.classList.add('show');
-      });
-    });
+// Handle flash message transitions without a timer
+window.addEventListener('DOMContentLoaded', (event) => {
+  let alerts = document.querySelectorAll('.alert');
+  alerts.forEach((alert) => {
+    // Add the 'show' class to trigger the fade-in transition
+    alert.classList.add('show');
+  });
+});
 </script>
 {% endblock %}
