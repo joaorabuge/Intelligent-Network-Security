@@ -15,7 +15,7 @@
             </div>
         </div>
         <div class="col-md-4 mb-4">
-            <div class="card bg-dark text-light shadow-sm" data-bs-toggle="tooltip" data-bs-placement="top" ">
+            <div class="card bg-dark text-light shadow-sm" data-bs-toggle="tooltip" data-bs-placement="top">
                 <div class="card-body">
                     <h5>Unique Attack Types</h5>
                     <p class="fs-4" id="attack-types" data-bs-toggle="tooltip" data-bs-html="true">Loading...</p>
@@ -24,6 +24,12 @@
         </div>
     </div>
 
+    <!-- Bar Chart for Attack Type Distribution -->
+    <div class="row justify-content-center mt-4">
+        <div class="col-md-8">
+            <canvas id="attackChart" width="400" height="200"></canvas>
+        </div>
+    </div>
 
     <!-- Report Download Button -->
     <div class="text-center mt-4">
@@ -33,7 +39,10 @@
 
 <div class="text-center mt-4">
     <a href="{{ url_for('home') }}" class="btn btn-info">Back to Home</a>
-  </div>
+</div>
+
+<!-- Include Chart.js from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -41,15 +50,19 @@ document.addEventListener("DOMContentLoaded", function() {
 
     if (!df.length) {
         console.log("No data available for analytics.");
+        // Still initialize counts as 0.
+        document.getElementById("total-anomalies").innerText = 0;
+        document.getElementById("attack-types").innerText = 0;
         return;
     }
 
     // Count anomalies
-    let totalAnomalies = df.filter(row => Number(row.label) === 1).length;
+    let anomalies = df.filter(row => Number(row.label) === 1);
+    let totalAnomalies = anomalies.length;
     document.getElementById("total-anomalies").innerText = totalAnomalies;
 
     // Get unique attack types from anomalies
-    let attackTypes = [...new Set(df.filter(row => Number(row.label) === 1).map(row => row.type))];
+    let attackTypes = [...new Set(anomalies.map(row => row.type))];
     document.getElementById("attack-types").innerText = attackTypes.length;
 
     // Set tooltip content for attack types
@@ -59,13 +72,40 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // Initialize Bootstrap tooltip
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
+    tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+        new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Get attack distribution data passed from Flask
+    let attackDistribution = JSON.parse('{{ attack_distribution | safe }}');
+    let labels = Object.keys(attackDistribution);
+    let counts = Object.values(attackDistribution);
+
+    // Create bar chart with Chart.js
+    var ctx = document.getElementById('attackChart').getContext('2d');
+    new Chart(ctx, {
+         type: 'bar',
+         data: {
+             labels: labels,
+             datasets: [{
+                 label: 'Attack Type Count',
+                 data: counts,
+                 backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                 borderColor: 'rgba(75, 192, 192, 1)',
+                 borderWidth: 1
+             }]
+         },
+         options: {
+             scales: {
+                 y: {
+                     beginAtZero: true,
+                     ticks: {
+                         stepSize: 1
+                     }
+                 }
+             }
+         }
     });
 });
-    
-
-
 </script>
-
 {% endblock %}

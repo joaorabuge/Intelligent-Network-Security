@@ -825,128 +825,139 @@ def analytics():
 
     # Combine both datasets
     combined_data = realtime_data + pcap_data
-
-    # Convert to DataFrame
     df = pd.DataFrame(combined_data)
 
-    # Process the data for anomalies (1) and normal traffic (0)
-    df["label"] = df.apply(lambda row: 1 if row['type'] != 'normal' else 0, axis=1)
+    if not df.empty and 'type' in df.columns:
+        # Process the data for anomalies (1) and normal traffic (0)
+        df["label"] = df.apply(lambda row: 1 if row['type'] != 'normal' else 0, axis=1)
+        anomalies = df[df["label"] == 1].to_dict(orient="records")
+    else:
+        df = pd.DataFrame()
+        anomalies = []
 
-    # List of anomalies to display in the table
-    anomalies = df[df["label"] == 1].to_dict(orient="records")
+    # Compute distribution of attack types among anomalies
+    attack_distribution = {}
+    for row in anomalies:
+        attack = row.get("type", "unknown")
+        attack_distribution[attack] = attack_distribution.get(attack, 0) + 1
 
-    return render_template("analytics.html", df=df.to_json(orient="records"), anomalies=anomalies)
-
+    return render_template(
+        "analytics.html", 
+        df=df.to_json(orient="records"), 
+        anomalies=anomalies,
+        attack_distribution=json.dumps(attack_distribution)
+    )
 
 
 @app.route("/download-report")
 @login_required
 def download_report():
-    """Generate and download a properly formatted PDF report."""
+    import matplotlib
+    matplotlib.use('Agg')  # Non-GUI backend
+    import matplotlib.pyplot as plt
+    from textwrap import wrap
+    import re
+
+    # Combine anomalies from RealTimeResult & PCAPResult
     past_results = RealtimeResult.query.filter_by(user_id=current_user.id).all()
     pcap_results = PCAPResult.query.filter_by(user_id=current_user.id).all()
-
-    anomalies = []
-    for result in past_results:
+    all_packets = []
+    for result in past_results + pcap_results:
         try:
             data = json.loads(result.result)
-            anomalies.extend(data)
+            all_packets.extend(data)
         except:
             continue
 
-    # Check if no anomalies exist and handle this case
-    if not anomalies:
-        anomalies = [{"type": "None", "label": "None", "confidence": "N/A", "ts": "N/A"}]
+    # --- Filter out rows whose 'type' == 'normal' to match your /analytics logic ---
+    anomalies = [pkt for pkt in all_packets if pkt.get('type', 'unknown').lower() != 'normal']
+    total_anomalies = len(anomalies)
 
+    # Attack distribution for anomalies only
+    attack_distribution = {}
+    for anomaly in anomalies:
+        attack = anomaly.get("type", "unknown").lower()
+        attack_distribution[attack] = attack_distribution.get(attack, 0) + 1
+
+    # Generate bar chart with matplotlib
+    fig, ax = plt.subplots()
+    types = list(attack_distribution.keys())
+    counts = list(attack_distribution.values())
+    ax.bar(types, counts, color='skyblue')
+    ax.set_xlabel('Attack Type')
+    ax.set_ylabel('Count')
+    ax.set_title('Attack Distribution (Anomalies Only)')
+    plt.tight_layout()
+    chart_path = "attack_chart.png"
+    plt.savefig(chart_path)
+    plt.close()
+
+    # Chatbot for recommendations
+    prompt = (
+        f"Attack distribution: {attack_distribution}.\n"
+        "If there are no anomalous attacks (i.e. if 'normal' is the only traffic), then the network appears safe—please provide minimal, best-practice security recommendations to maintain this safety. "
+        "Otherwise, if there are anomalous attacks, please provide detailed security recommendations and cautions to prevent these types of attacks in the future."
+    )
+
+    recommendations = generate_chatbot_response(prompt)
+
+    # Remove simple Markdown bold: **text** => text
+    recommendations = re.sub(r'\*\*(.*?)\*\*', r'\1', recommendations)
+
+    # Generate PDF with ReportLab
     pdf_path = "analytics_report.pdf"
     c = canvas.Canvas(pdf_path, pagesize=letter)
-    
-    # Set the title of the document (this is what will show in the file name and title bar)
+
+    # Header
     c.setTitle("Intelligent Network Security Analysis Report")
-
-    c.setFont("Helvetica", 12)
-
-    # Add Company Header and Information
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(100, 750, "Intelligent Network Security")  # Company Name
+    c.drawString(100, 750, "Intelligent Network Security")
     c.setFont("Helvetica", 10)
     c.drawString(100, 730, "Av. das Forças Armadas, 1649-026 Lisboa, Portugal")
     c.drawString(100, 710, "(Phone) 21 790 3000")
     c.drawString(100, 690, "jrpre1@iscte-iul.pt")
     c.drawString(100, 670, "https://www.iscte-iul.pt/")
 
-    # Add Report Title
+    # Report Title
     c.setFont("Helvetica-Bold", 14)
     c.drawString(100, 630, "Analysis Report")
-
-    # Add total anomalies count
     c.setFont("Helvetica", 12)
-    total_anomalies = len(anomalies)
     c.drawString(100, 610, f"Total Anomalies: {total_anomalies}")
+    c.drawString(100, 590, f"Unique Attack Types: {len(attack_distribution)}")
 
-    # Add Unique Attack Types
-    attack_types = set([anomaly.get("type", "Unknown") for anomaly in anomalies])
-    c.drawString(100, 590, f"Unique Attack Types: {len(attack_types)}")
-    
-    # List the different attack types
-    y_position = 580
-    c.setFont("Helvetica", 10)
-    for attack_type in attack_types:
-        c.drawString(100, y_position, f"- {attack_type}")
-        y_position -= 30
+    # Embed bar chart
+    c.drawImage(chart_path, 100, 400, width=400, height=200)
 
-    # Add Summary of Anomalies (Confidence, Timestamp, and Type)
+    # Recommendations heading
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(100, y_position - 20, "Anomalies Details:")
-    y_position -= 40  # Increase space between the title and the details
+    c.drawString(100, 370, "Recommendations:")
+
+    # Switch back to normal font for the text
     c.setFont("Helvetica", 10)
+    text_x = 100
+    text_y = 350
+    line_height = 14
 
-    for anomaly in anomalies:
-        label = anomaly.get("label", "Unknown")
-        attack_type = anomaly.get("type", "Unknown")
-        confidence = anomaly.get("confidence", "N/A")
-        
-        c.drawString(100, y_position, f" Type: {attack_type} | Label: {label} | Confidence: {confidence}")
-        y_position -= 20
-
-        # Start a new page if necessary
-        if y_position < 100:
-            c.showPage()
-            c.setFont("Helvetica", 10)
-            y_position = 750
-
-    # Add PCAP results to the report
-    if pcap_results:
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(100, y_position - 20, "PCAP Analysis Details:")
-        y_position -= 40
-        c.setFont("Helvetica", 10)
-
-        for pcap in pcap_results:
-            try:
-                data = json.loads(pcap.result)
-                for packet in data:
-                    timestamp = packet.get("ts", "Unknown")
-                    packet_type = packet.get("type", "Unknown")
-                    confidence = packet.get("confidence", "N/A")
-                    c.drawString(100, y_position, f"Timestamp: {timestamp} | Type: {packet_type} | Confidence: {confidence}")
-                    y_position -= 20
-
-                    # Start a new page if necessary
-                    if y_position < 100:
-                        c.showPage()
-                        c.setFont("Helvetica", 10)
-                        y_position = 750
-            except:
-                continue
+    recommendation_lines = recommendations.split("\n")
+    for line in recommendation_lines:
+        wrapped = wrap(line, width=90)
+        if not wrapped:  # if line is empty, add a blank line
+            wrapped = [""]
+        for subline in wrapped:
+            if text_y < 50:  # start a new page if near the bottom
+                c.showPage()
+                c.setFont("Helvetica", 10)
+                text_y = 750
+            c.drawString(text_x, text_y, subline)
+            text_y -= line_height
 
     c.save()
+
+    # Remove chart image
+    if os.path.exists(chart_path):
+        os.remove(chart_path)
+
     return send_file(pdf_path, as_attachment=True)
-
-
-
-
-
 
 if __name__ == "__main__":
     with app.app_context():
