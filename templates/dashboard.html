@@ -9,8 +9,8 @@
 {% if update_available %}
 <div class="alert alert-warning alert-dismissible fade show mt-4" role="alert">
     <strong>New data added!</strong> Please update the model newest version!.
-    <form method="POST" action="{{ url_for('update_model') }}">
-        <button type="submit" class="btn btn-warning mt-2">Update Model</button>
+    <form id="updateModelForm" method="POST" action="{{ url_for('update_model') }}">
+        <button type="submit" id="updateModelButton" class="btn btn-warning mt-2">Update Model</button>
     </form>
     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
 </div>
@@ -20,7 +20,6 @@
 <div id="model-updated-alert" class="alert alert-success" style="display: none;" role="alert">
   Model updated successfully!
 </div>
-
 
 <div class="row justify-content-center g-4">
 
@@ -54,7 +53,7 @@
       </div>
       <h5><strong>Evaluate Model</strong></h5>
       <p>Assess your anomaly detection model's performance.</p>
-      <a href="{{ url_for('evaluate_model') }}" class="btn btn-info mt-3">Evaluate Now</a>
+      <a href="{{ url_for('evaluate_model') }}" class="btn btn-info mt-3" id="evaluateModelBtn">Evaluate Now</a>
     </div>
   </div>
   
@@ -75,8 +74,36 @@
 <div class="text-center mt-4">
   <a href="{{ url_for('home') }}" class="btn btn-info">Back to Home</a>
 </div>
+
 <script>
-  // Keep a variable to store the last known pipeline status
+  // Para o formulário de update model
+  const updateModelForm = document.getElementById("updateModelForm");
+  if (updateModelForm) {
+      updateModelForm.addEventListener("submit", function() {
+          const btn = document.getElementById("updateModelButton");
+          btn.innerText = "Loading...";
+          btn.disabled = true;
+      });
+  }
+
+  // Para os links que atuam como botões
+  document.querySelectorAll('a.btn').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+          e.preventDefault();
+          // Se o botão for o Evaluate Model, mostra "Evaluating..."
+          if(this.id === "evaluateModelBtn"){
+              this.innerText = "Evaluating...";
+          } else {
+              this.innerText = "Loading...";
+          }
+          this.classList.add("disabled");
+          setTimeout(() => {
+              window.location.href = this.href;
+          }, 100);
+      });
+  });
+
+  // Código existente para verificação do pipeline
   let lastPipelineStatus = null;
 
   function checkPipelineStatus() {
@@ -84,42 +111,27 @@
           .then(response => response.json())
           .then(data => {
               const currentStatus = data.status;
-
-              // If the status transitions to "completed" and was previously "pending" (or anything else not "completed"),
-              // show the "Model updated" message.
               if (currentStatus === "completed" && lastPipelineStatus && lastPipelineStatus !== "completed") {
                   document.getElementById("model-updated-alert").style.display = "block";
               }
-
-              // Update the last known status
               lastPipelineStatus = currentStatus;
-
-              // If there's an error state, you could show an error or stop polling
               if (currentStatus === "error") {
                   alert("Error updating model. Check logs");
-                  clearInterval(pipelineCheckInterval); // Stop checking
+                  clearInterval(pipelineCheckInterval);
               }
           })
           .catch(error => {
               console.error("Error checking pipeline status:", error);
           });
   }
-
-  // Poll every 30 minutes (1800000 ms)
   const pipelineCheckInterval = setInterval(checkPipelineStatus, 1800000);
-
-  // Run it once immediately on page load
   checkPipelineStatus();
 
-  // Handle flash message transitions without a timer
   window.addEventListener('DOMContentLoaded', () => {
-      let alerts = document.querySelectorAll('.alert');
-      alerts.forEach((alert) => {
-          // Add the 'show' class to trigger the fade-in transition
+      document.querySelectorAll('.alert').forEach((alert) => {
           alert.classList.add('show');
       });
   });
 </script>
-
 
 {% endblock %}

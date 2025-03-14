@@ -137,8 +137,19 @@ def save_pipeline_state(state):
     with open(PIPELINE_STATE_FILE, "w") as file:
         file.write(state)
 
+# Variável global para armazenar o tempo da última verificação do hash
+LAST_HASH_CHECK = None
+
 def check_for_updates():
-    """Verifica se há novos dados e define o estado do pipeline."""
+    global LAST_HASH_CHECK
+    agora = time.time()
+    # Se já houve verificação e passou menos de 1 hora (3600 segundos), pula a verificação
+    if LAST_HASH_CHECK is not None and (agora - LAST_HASH_CHECK) < 3600:
+        print("DEBUG: Verificação de hash pulada (executada recentemente)")
+        return False  # ou retornar o estado atual se preferir
+    # Atualiza o timestamp da última verificação
+    LAST_HASH_CHECK = agora
+
     print("\n--- Verificando atualizações no dataset ---")
     current_hash = calculate_dataset_hash()
     previous_hash = load_previous_hash()
@@ -156,6 +167,7 @@ def check_for_updates():
     else:
         print("Nenhuma atualização detectada.")
         return False
+
 
 
 
@@ -374,10 +386,12 @@ def register():
         db.session.add(new_user)
         db.session.commit()
 
-        flash("Account successfuly created!", "success")
-        return redirect(url_for("login"))
+        # Login automático após o registro
+        login_user(new_user)
+        return redirect(url_for("home"))
 
     return render_template("register.html")
+
 
 
 

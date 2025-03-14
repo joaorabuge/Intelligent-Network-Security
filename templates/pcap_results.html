@@ -47,7 +47,7 @@
 
     <!-- Back Button -->
     <div class="text-center">
-        <a href="{{ url_for('dashboard') }}" class="btn btn-info">Back to Dashboard</a>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-info" id="backToDashboardBtn">Back to Dashboard</a>
     </div>
 </div>
 
@@ -104,5 +104,14 @@
       });
     });
 
+    // Adiciona comportamento "Loading..." ao clicar no botão "Back to Dashboard"
+    document.getElementById("backToDashboardBtn").addEventListener("click", function(e) {
+        e.preventDefault();
+        this.innerText = "Loading...";
+        this.classList.add("disabled");
+        setTimeout(() => {
+            window.location.href = this.href;
+        }, 100);
+    });
 </script>
 {% endblock %}

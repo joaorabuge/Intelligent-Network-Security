@@ -15,8 +15,7 @@
     <div class="card bg-dark text-light mb-4 shadow-sm">
         <div class="card-body text-center">
             <h5 class="card-title">Packet Distribution</h5>
-                <canvas id="trafficChart" style="max-height: 400px;"></canvas>
-            </div>
+            <canvas id="trafficChart" style="max-height: 400px;"></canvas>
         </div>
     </div>
 
@@ -25,8 +24,7 @@
     <div class="card bg-dark text-light mb-4 shadow-sm">
         <div class="card-body text-center">
             <h5 class="card-title">Attack Types</h5>
-                <canvas id="attackChart" style="max-height: 400px;"></canvas>
-            </div>
+            <canvas id="attackChart" style="max-height: 400px;"></canvas>
         </div>
     </div>
     {% else %}
@@ -38,16 +36,16 @@
     {% endif %}
 
     <!-- Buttons -->
-<!-- Buttons with better spacing -->
-<div class="d-flex justify-content-center gap-3 mt-4">
-    <a href="{{ url_for('results') }}" class="btn btn-info px-4">Back to Results</a>
-    <form method="POST" action="{{ url_for('delete_pcap_result', result_id=result.id) }}">
-        <button type="submit" class="btn btn-danger px-4">Delete Record</button>
-    </form>
+    <div class="d-flex justify-content-center gap-3 mt-4">
+        <a href="{{ url_for('results') }}" class="btn btn-info px-4" id="backToResultsBtn">Back to Results</a>
+        <form method="POST" action="{{ url_for('delete_pcap_result', result_id=result.id) }}" id="deleteRecordForm">
+            <button type="submit" class="btn btn-danger px-4" id="deleteRecordBtn">Delete Record</button>
+        </form>
+    </div>
 </div>
 
-
-<!-- JavaScript for Charts -->
+<!-- JavaScript for Charts and Button Loading Behavior -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     document.addEventListener("DOMContentLoaded", function() {
         console.log("Initializing Charts...");
@@ -102,6 +100,23 @@
             });
         }
         {% endif %}
+    });
+
+    // Botão "Back to Results" com comportamento Loading
+    document.getElementById("backToResultsBtn").addEventListener("click", function(e) {
+        e.preventDefault();
+        this.innerText = "Loading...";
+        this.classList.add("disabled");
+        setTimeout(() => {
+            window.location.href = this.href;
+        }, 100);
+    });
+
+    // Botão "Delete Record" com comportamento "Deleting..."
+    document.getElementById("deleteRecordForm").addEventListener("submit", function() {
+        const btn = document.getElementById("deleteRecordBtn");
+        btn.innerText = "Deleting...";
+        btn.disabled = true;
     });
 </script>
 {% endblock %}

@@ -5,18 +5,18 @@
     <h2 class="text-center mb-4">Real-Time Capture Results</h2>
 
     <!-- Display flash messages -->
-                <!-- Exibindo mensagem de erro ou sucesso -->
-                {% with messages = get_flashed_messages(with_categories=true) %}
-                    {% if messages %}
-                        <ul class="list-unstyled">
-                            {% for category, message in messages %}
-                                <li class="alert alert-{{ category }}">
-                                    {{ message }}
-                                </li>
-                            {% endfor %}
-                        </ul>
-                    {% endif %}
-                {% endwith %}
+    <!-- Exibindo mensagem de erro ou sucesso -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <ul class="list-unstyled">
+                {% for category, message in messages %}
+                    <li class="alert alert-{{ category }}">
+                        {{ message }}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
 
     <!-- Results Summary -->
     <div class="card mb-4 shadow-sm">
@@ -100,13 +100,25 @@
         }
     });
     {% endif %}
-    // Handle flash message transitions without a timer
+
+    // Exibe os alertas com fade-in
     window.addEventListener('DOMContentLoaded', (event) => {
-      let alerts = document.querySelectorAll('.alert');
-      alerts.forEach((alert) => {
-        // Add the 'show' class to trigger the fade-in transition
-        alert.classList.add('show');
-      });
+        let alerts = document.querySelectorAll('.alert');
+        alerts.forEach((alert) => {
+            alert.classList.add('show');
+        });
+    });
+
+    // Adiciona comportamento "Loading..." aos botões (links) da página
+    document.querySelectorAll('a.btn').forEach(anchor => {
+        anchor.addEventListener('click', function(e) {
+            e.preventDefault();
+            this.innerText = "Loading...";
+            this.classList.add("disabled");
+            setTimeout(() => {
+                window.location.href = this.href;
+            }, 100);
+        });
     });
 </script>
 {% endblock %}

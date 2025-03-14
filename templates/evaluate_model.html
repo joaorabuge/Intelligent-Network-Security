@@ -82,7 +82,7 @@
     {% endfor %}
 
     <div class="text-center">
-      <a href="{{ url_for('dashboard') }}" class="btn btn-info">Back to Dashboard</a>
+      <a href="{{ url_for('dashboard') }}" class="btn btn-info back-btn">Back to Dashboard</a>
     </div>
 
   {% else %}
@@ -90,7 +90,7 @@
       Evaluation did not complete or no results available.
     </div>
     <div class="text-center">
-      <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Back to Dashboard</a>
+      <a href="{{ url_for('dashboard') }}" class="btn btn-secondary back-btn">Back to Dashboard</a>
     </div>
   {% endif %}
 
@@ -99,10 +99,20 @@
 <script>
   // Handle flash message transitions without a timer
   window.addEventListener('DOMContentLoaded', (event) => {
-    let alerts = document.querySelectorAll('.alert');
-    alerts.forEach((alert) => {
-      // Add the 'show' class to trigger the fade-in transition
+    document.querySelectorAll('.alert').forEach((alert) => {
       alert.classList.add('show');
+    });
+    
+    // Add "Loading..." behavior to all Back to Dashboard buttons
+    document.querySelectorAll('a.back-btn').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        this.innerText = "Loading...";
+        this.classList.add("disabled");
+        setTimeout(() => {
+          window.location.href = this.href;
+        }, 100);
+      });
     });
   });
 </script>

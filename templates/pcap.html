@@ -4,18 +4,36 @@
 <div class="card mt-4">
     <div class="card-body">
         <h5 class="card-title">Upload PCAP File for Analysis</h5>
-        <form method="POST" action="{{ url_for('process_pcap_file') }}" enctype="multipart/form-data">
+        <form method="POST" action="{{ url_for('process_pcap_file') }}" enctype="multipart/form-data" id="pcapForm">
             <div class="mb-3">
                 <label class="form-label">PCAP File:</label>
                 <input type="file" name="pcap_file" class="form-control" required>
             </div>
-            <button class="btn btn-info">Process File</button>
+            <button type="submit" class="btn btn-info" id="processFileButton">Analyze File</button>
         </form>
     </div>
 </div>
 
 <div class="text-center mt-4">
-    <a href="{{ url_for('dashboard') }}" class="btn btn-info">Back to Dashboard</a>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-info" id="backToDashboardBtn">Back to Dashboard</a>
 </div>
 
+<script>
+  // Ao enviar o formulário, o botão "Process File" muda para "Loading..." e é desabilitado
+  document.getElementById("processFileButton").addEventListener("submit", function() {
+      const btn = document.getElementById("processFileButton");
+      btn.innerText = "Analyzing...";
+      btn.disabled = true;
+  });
+
+  // Ao clicar no link "Back to Dashboard", o texto muda para "Loading..." e o link é desabilitado temporariamente
+  document.getElementById("backToDashboardBtn").addEventListener("click", function(e) {
+      e.preventDefault();
+      this.innerText = "Loading...";
+      this.classList.add("disabled");
+      setTimeout(() => {
+          window.location.href = this.href;
+      }, 100);
+  });
+</script>
 {% endblock %}

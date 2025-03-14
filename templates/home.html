@@ -41,4 +41,18 @@
     </div>
 
 </div>
+
+<script>
+  // Adiciona o comportamento "Loading..." a todos os links com a classe "btn"
+  document.querySelectorAll('a.btn').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+          e.preventDefault();
+          this.innerText = "Loading...";
+          this.classList.add("disabled");
+          setTimeout(() => {
+              window.location.href = this.href;
+          }, 100);
+      });
+  });
+</script>
 {% endblock %}

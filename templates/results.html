@@ -40,8 +40,8 @@
     </div>
 
     <div class="text-center mt-4">
-        <form method="POST" action="{{ url_for('delete_all_results') }}">
-            <button class="btn btn-danger" onclick="return confirm('Are you sure you want to delete all results?')">Delete All Results</button>
+        <form method="POST" action="{{ url_for('delete_all_results') }}" id="deleteAllForm">
+            <button type="submit" id="deleteAllButton" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete all results?')">Delete All Results</button>
         </form>
     </div>
 </div>
@@ -50,5 +50,29 @@
     <a href="{{ url_for('dashboard') }}" class="btn btn-info">Back to Dashboard</a>
 </div>
 
+<script>
+  // Adiciona listener para o formulário de "Delete All Results"
+  const deleteAllForm = document.getElementById("deleteAllForm");
+  if (deleteAllForm) {
+      deleteAllForm.addEventListener("submit", function() {
+          const btn = document.getElementById("deleteAllButton");
+          btn.innerText = "Deleting All...";
+          btn.disabled = true;
+      });
+  }
 
+  // Adiciona listener para todos os links com a classe "btn"
+  document.querySelectorAll('a.btn').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+          // Interrompe a navegação imediata para atualizar o botão
+          e.preventDefault();
+          this.innerText = "Loading...";
+          this.classList.add("disabled");
+          // Redireciona após um curto delay
+          setTimeout(() => {
+              window.location.href = this.href;
+          }, 100);
+      });
+  });
+</script>
 {% endblock %}

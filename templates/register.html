@@ -5,7 +5,7 @@
     <div class="col-md-5">
         <div class="card shadow-sm border-0 p-4">
             <h3 class="text-center mb-4">Create Your Account</h3>
-            <form method="POST">
+            <form method="POST" id="registerForm">
                 <!-- Exibindo mensagem de erro ou sucesso -->
                 {% with messages = get_flashed_messages(with_categories=true) %}
                     {% if messages %}
@@ -32,7 +32,7 @@
                     <input type="password" class="form-control" id="password" name="password" placeholder="Enter your password" required>
                 </div>
                 <div class="d-grid">
-                    <button type="submit" class="btn btn-primary btn-lg">Register</button>
+                    <button type="submit" id="registerButton" class="btn btn-primary btn-lg">Register</button>
                 </div>
                 <div class="text-center mt-3">
                     <small class="text-muted">
@@ -44,15 +44,20 @@
     </div>
 </div>
 
-
 <script>
-    // Handle flash message transitions without a timer
-    window.addEventListener('DOMContentLoaded', (event) => {
-      let alerts = document.querySelectorAll('.alert');
-      alerts.forEach((alert) => {
-        // Add the 'show' class to trigger the fade-in transition
-        alert.classList.add('show');
-      });
+    // Ao enviar o formulário, o botão muda para "Loading..." e é desabilitado
+    document.getElementById("registerForm").addEventListener("submit", function() {
+        const btn = document.getElementById("registerButton");
+        btn.innerText = "Loading...";
+        btn.disabled = true;
     });
-  </script>
+
+    // Exibe as mensagens de alerta com fade-in
+    window.addEventListener('DOMContentLoaded', (event) => {
+        let alerts = document.querySelectorAll('.alert');
+        alerts.forEach((alert) => {
+            alert.classList.add('show');
+        });
+    });
+</script>
 {% endblock %}

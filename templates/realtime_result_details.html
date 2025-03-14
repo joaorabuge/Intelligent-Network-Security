@@ -15,8 +15,7 @@
     <div class="card bg-dark text-light mb-4 shadow-sm">
         <div class="card-body text-center">
             <h5 class="card-title">Packet Distribution</h5>
-                <canvas id="trafficChart" style="max-height: 400px;"></canvas>
-            </div>
+            <canvas id="trafficChart" style="max-height: 400px;"></canvas>
         </div>
     </div>
 
@@ -39,16 +38,16 @@
     {% endif %}
 
     <!-- Buttons -->
-<!-- Buttons with better spacing -->
-<div class="d-flex justify-content-center gap-3 mt-4">
-    <a href="{{ url_for('results') }}" class="btn btn-info px-4">Back to Results</a>
-    <form method="POST" action="{{ url_for('delete_realtime_result', result_id=result.id) }}">
-        <button type="submit" class="btn btn-danger px-4">Delete Record</button>
-    </form>
+    <div class="d-flex justify-content-center gap-3 mt-4">
+        <a href="{{ url_for('results') }}" class="btn btn-info px-4" id="backToResultsBtn">Back to Results</a>
+        <form method="POST" action="{{ url_for('delete_realtime_result', result_id=result.id) }}" id="deleteRecordForm">
+            <button type="submit" class="btn btn-danger px-4" id="deleteRecordBtn">Delete Record</button>
+        </form>
+    </div>
 </div>
 
-
-<!-- JavaScript for Charts -->
+<!-- JavaScript for Charts and Button Loading Behavior -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     document.addEventListener("DOMContentLoaded", function() {
         console.log("Initializing Charts...");
@@ -70,10 +69,8 @@
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false,  // Ensures the chart respects max-height
-                    plugins: {
-                        legend: { position: 'top' }
-                    }
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'top' } }
                 }
             });
         }
@@ -84,7 +81,6 @@
         if (attackCanvas) {
             const attackLabels = Object.keys({{ graph_data.attack_types | tojson }});
             const attackValues = Object.values({{ graph_data.attack_types | tojson }});
-
             new Chart(attackCanvas.getContext('2d'), {
                 type: 'bar',
                 data: {
@@ -96,7 +92,7 @@
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false,  // Prevents oversized charts
+                    maintainAspectRatio: false,
                     plugins: { legend: { display: false } },
                     scales: { y: { beginAtZero: true } }
                 }
@@ -104,5 +100,28 @@
         }
         {% endif %}
     });
+
+    // Button Loading Behavior for "Back to Results" (Anchor)
+    const backToResultsBtn = document.getElementById("backToResultsBtn");
+    if (backToResultsBtn) {
+        backToResultsBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            this.innerText = "Loading...";
+            this.classList.add("disabled");
+            setTimeout(() => {
+                window.location.href = this.href;
+            }, 100);
+        });
+    }
+
+    // Button Loading Behavior for "Delete Record" (Form Submit)
+    const deleteRecordForm = document.getElementById("deleteRecordForm");
+    if (deleteRecordForm) {
+        deleteRecordForm.addEventListener("submit", function() {
+            const btn = document.getElementById("deleteRecordBtn");
+            btn.innerText = "Deleting...";
+            btn.disabled = true;
+        });
+    }
 </script>
 {% endblock %}

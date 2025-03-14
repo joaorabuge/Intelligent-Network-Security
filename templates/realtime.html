@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+
 {% block content %}
 <div class="card mt-4">
     <div class="card-body">
         <h5 class="card-title">Real-Time Traffic Analysis</h5>
-        <form method="POST" action="{{ url_for('realtime') }}">
+        <form method="POST" action="{{ url_for('realtime') }}" id="captureForm">
             <div class="mb-3">
                 <label for="interface">Interface:</label>
                 <select class="form-select" id="interface" name="interface" required>
@@ -20,13 +21,31 @@
                 <label for="password">Administrator Password (if needed)</label>
                 <input type="password" class="form-control" id="password" name="password" placeholder="Enter the password">
             </div>
-            <button class="btn btn-info">Start Capture</button>
+            <button type="submit" class="btn btn-info" id="startCaptureButton">Start Capture</button>
         </form>
     </div>
 </div>
 
 <div class="text-center mt-4">
-    <a href="{{ url_for('dashboard') }}" class="btn btn-info">Back to Dashboard</a>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-info" id="backToDashboardBtn">Back to Dashboard</a>
 </div>
 
+<script>
+  // Ao enviar o formulário, o botão "Start Capture" muda para "Loading..." e é desabilitado
+  document.getElementById("captureForm").addEventListener("submit", function() {
+      const btn = document.getElementById("startCaptureButton");
+      btn.innerText = "Analyzing...";
+      btn.disabled = true;
+  });
+  
+  // Ao clicar no link "Back to Dashboard", o texto muda para "Loading..." e o link é desabilitado temporariamente
+  document.getElementById("backToDashboardBtn").addEventListener("click", function(e) {
+      e.preventDefault();
+      this.innerText = "Loading...";
+      this.classList.add("disabled");
+      setTimeout(() => {
+          window.location.href = this.href;
+      }, 100);
+  });
+</script>
 {% endblock %}
