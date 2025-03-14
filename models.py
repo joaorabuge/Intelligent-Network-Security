@@ -1,3 +1,5 @@
+# models.py
+
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, UserMixin
@@ -17,7 +19,6 @@ class PCAPResult(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     user = db.relationship('User', back_populates='pcap_results')
 
-
 class RealtimeResult(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, default=db.func.now())
@@ -25,8 +26,18 @@ class RealtimeResult(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     user = db.relationship('User', back_populates='realtime_results')
 
+# New model for storing context files
+class ChatContext(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    analysis_type = db.Column(db.String(50), nullable=False)  # e.g. "real_time" or "pcap"
+    result_id = db.Column(db.Integer, nullable=False)         # ID of the corresponding analysis result
+    file_path = db.Column(db.String(255), nullable=False)
+    timestamp = db.Column(db.DateTime, default=db.func.now())
 
-# Relacionamento no modelo User
+    user = db.relationship('User', backref='chat_contexts')
+
+
 class User(UserMixin, db.Model):  # Adicione UserMixin aqui
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), nullable=False, unique=True)

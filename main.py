@@ -10,7 +10,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from models import db, bcrypt, login_manager, User, PCAPResult, RealtimeResult
+from models import db, bcrypt, login_manager, User, PCAPResult, RealtimeResult, ChatContext
 from config import Config
 from real_time_streaming import clean_previous_files, start_zeek_capture, process_zeek_logs, classify_traffic
 from real_time_streaming import get_active_interfaces
@@ -50,6 +50,39 @@ login_manager.init_app(app)
 
 login_manager.login_view = "login"
 login_manager.login_message_category = "info"
+
+import time
+
+def combine_raw_and_final(
+    raw_csv="real-time/raw_captured_data.csv", 
+    final_csv="real-time/final_captured_data.csv", 
+    user_id=None,
+    analysis_type="real_time"  # ou "pcap" conforme o caso
+):
+    import time
+    unique_filename = f"combined_data_{analysis_type}_{user_id}_{int(time.time())}.csv"
+    output_dir = "analysis"
+    # Cria o diretório se não existir
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    output_csv = os.path.join(output_dir, unique_filename)
+    
+    df_raw = pd.read_csv(raw_csv)
+    df_final = pd.read_csv(final_csv)
+    
+    if df_raw.shape[0] != df_final.shape[0]:
+        raise ValueError("The raw and final CSV files do not have the same number of rows.")
+    
+    df_combined = df_raw.copy()
+    for col in ["type", "label"]:
+        if col in df_final.columns:
+            df_combined[col] = df_final[col]
+        else:
+            print(f"Warning: Column '{col}' not found in the final CSV.")
+    
+    df_combined.to_csv(output_csv, index=False)
+    return output_csv
+
 
 def get_lisbon_time():
     utc_time = datetime.now(pytz.utc)  # Get current UTC time
@@ -199,36 +232,6 @@ def generate_graph_data_1(data):
         "malign_count": malign_count,
         "attack_types": attack_types,
     }
-
-def combine_raw_and_final(
-    raw_csv="real-time/raw_captured_data.csv", 
-    final_csv="real-time/final_captured_data.csv", 
-    output_csv="real-time/combined_data.csv"
-):
-    """
-    Combines the raw captured data (with detailed fields such as IP addresses) 
-    and the final processed data (which contains label, type, and confidence) 
-    into a single CSV file.
-    
-    Since the row order is guaranteed to be the same, we simply concatenate the
-    additional columns from the final CSV to the raw CSV.
-    """
-    df_raw = pd.read_csv(raw_csv)
-    df_final = pd.read_csv(final_csv)
-    
-    # Check if both files have the same number of rows.
-    if df_raw.shape[0] != df_final.shape[0]:
-        raise ValueError("The raw and final CSV files do not have the same number of rows.")
-    
-    df_combined = df_raw.copy()
-    for col in ["type", "label"]:
-        if col in df_final.columns:
-            df_combined[col] = df_final[col]
-        else:
-            print(f"Warning: Column '{col}' not found in the final CSV.")
-    
-    df_combined.to_csv(output_csv, index=False)
-    return output_csv
 
 import pandas as pd
 
@@ -449,9 +452,30 @@ def realtime():
 
             # Save results in the database
             result_text = json.dumps(results)
+            # After saving the RealtimeResult:
             new_result = RealtimeResult(result=result_text, user_id=current_user.id)
             db.session.add(new_result)
-            db.session.commit()
+            db.session.commit()  # Now new_result.id is available
+
+            # --- Generate and store context ---
+            try:
+                combined_file_path = combine_raw_and_final(
+                    user_id=current_user.id, 
+                    analysis_type="real_time"
+                )
+                from models import ChatContext  # Ensure ChatContext is imported
+                new_context = ChatContext(
+                    user_id=current_user.id, 
+                    analysis_type="real_time",
+                    result_id=new_result.id,
+                    file_path=combined_file_path
+                )
+                db.session.add(new_context)
+                db.session.commit()
+            except Exception as e:
+                print("Error creating chat context:", e)
+            # --- End New Code ---
+
 
             flash("Real-Time traffic analyzed successfully!", "success")
             return render_template("realtime_results.html", results=results, graph_data=graph_data)
@@ -460,8 +484,8 @@ def realtime():
             flash(f"Error during capture: {e}", "danger")
             return redirect(url_for("dashboard"))
 
-    # GET request simply renders the page with the form
     return render_template("realtime.html", active_interfaces=active_interfaces)
+
 
 
 
@@ -500,9 +524,25 @@ def process_pcap_file():
             result_text = json.dumps(results)
             new_result = PCAPResult(result=result_text, user_id=current_user.id)
             db.session.add(new_result)
-            db.session.commit()
+            db.session.commit()  # new_result.id is now available
 
-            flash("PCAP traffic analysed successfully!", "success")
+            # --- Generate and store context ---
+            try:
+                combined_file_path = combine_raw_and_final(user_id=current_user.id, analysis_type="pcap")
+                from models import ChatContext
+                new_context = ChatContext(
+                    user_id=current_user.id,
+                    analysis_type="pcap",
+                    result_id=new_result.id,
+                    file_path=combined_file_path
+                )
+                db.session.add(new_context)
+                db.session.commit()
+            except Exception as e:
+                print("Error creating chat context:", e)
+            # --- End New Code ---
+
+            # Retorne uma resposta válida
             return render_template("pcap_results.html", results=results, graph_data=graph_data)
 
         except Exception as e:
@@ -510,6 +550,9 @@ def process_pcap_file():
             return redirect(url_for("dashboard"))
     else:
         return redirect(url_for("dashboard"))
+
+
+
 
 
 
@@ -644,22 +687,40 @@ def results():
 @app.route("/delete-realtime-result/<int:result_id>", methods=["POST"])
 @login_required
 def delete_realtime_result(result_id):
-    """
-    Excluir um resultado de captura em tempo real.
-    """
     result = RealtimeResult.query.filter_by(id=result_id, user_id=current_user.id).first_or_404()
+    # Find associated ChatContext(s) for this real-time result
+    contexts = ChatContext.query.filter_by(
+        user_id=current_user.id,
+        analysis_type="real_time",
+        result_id=result_id
+    ).all()
+    for ctx in contexts:
+        if os.path.exists(ctx.file_path):
+            os.remove(ctx.file_path)
+        db.session.delete(ctx)
     db.session.delete(result)
     db.session.commit()
     return redirect(url_for("results"))
 
+
 @app.route("/delete-pcap-result/<int:result_id>", methods=["POST"])
 @login_required
 def delete_pcap_result(result_id):
-    print(f"DEBUG: Attempting to delete PCAP result with ID {result_id}")  # Add this line
     result = PCAPResult.query.filter_by(id=result_id, user_id=current_user.id).first_or_404()
+    # Find associated ChatContext(s) for this PCAP result
+    contexts = ChatContext.query.filter_by(
+        user_id=current_user.id,
+        analysis_type="pcap",
+        result_id=result_id
+    ).all()
+    for ctx in contexts:
+        if os.path.exists(ctx.file_path):
+            os.remove(ctx.file_path)
+        db.session.delete(ctx)
     db.session.delete(result)
     db.session.commit()
     return redirect(url_for("results"))
+
 
 
 @app.route("/pipeline-status", methods=["GET"])
@@ -688,37 +749,55 @@ def update_model():
 @app.route("/delete-all-results", methods=["POST"])
 @login_required
 def delete_all_results():
-    """
-    Excluir todos os resultados (PCAP e Tempo Real).
-    """
     try:
-        # Excluir resultados PCAP
+        # Delete all PCAP and Real-Time results for the user
         PCAPResult.query.filter_by(user_id=current_user.id).delete()
-        # Excluir resultados em Tempo Real
         RealtimeResult.query.filter_by(user_id=current_user.id).delete()
-        # Confirmar alterações
+        
+        # Find all ChatContext records for the user and remove the files
+        contexts = ChatContext.query.filter_by(user_id=current_user.id).all()
+        for ctx in contexts:
+            if os.path.exists(ctx.file_path):
+                os.remove(ctx.file_path)
+            db.session.delete(ctx)
         db.session.commit()
     except Exception as e:
-        db.session.rollback()  # Reverter alterações em caso de erro
+        db.session.rollback()
     return redirect(url_for("dashboard"))
+
 
 @app.route("/chat", methods=["GET", "POST"])
 @login_required
 def chat():
     if request.method == "POST":
         user_message = request.form.get("message")
-        # Combine raw and final CSVs before extracting context
-        try:
-            combine_raw_and_final()  # This will create or update real-time/combined_data.csv
-        except Exception as e:
-            flash(f"Error merging data: {e}", "danger")
+        # You might pass a selected context (file_path) from a dropdown in your form.
+        # Here, if no context is selected, we'll use the latest context.
+        context_id = request.form.get("context_id")
+        if context_id:
+            context_record = ChatContext.query.filter_by(id=context_id, user_id=current_user.id).first()
+            combined_file_path = context_record.file_path if context_record else None
+        else:
+            # Use the latest context for this user if no context is explicitly chosen.
+            latest_context = ChatContext.query.filter_by(user_id=current_user.id).order_by(ChatContext.timestamp.desc()).first()
+            combined_file_path = latest_context.file_path if latest_context else None
+
+        if not combined_file_path:
+            flash("No analysis context available. Run an analysis first.", "danger")
             return redirect(url_for("dashboard"))
-        # Get detailed context from the combined CSV file
-        context_data = get_network_context_from_combined("real-time/combined_data.csv")
+
+        try:
+            context_data = get_network_context_from_combined(combined_file_path)
+        except Exception as e:
+            return redirect(url_for("dashboard"))
+            
         response_message = generate_chatbot_response(user_message, context=context_data)
         return jsonify({"response": response_message})
     else:
-        return render_template("chat.html")
+        # Pass the user's saved contexts to the template for selection.
+        user_contexts = ChatContext.query.filter_by(user_id=current_user.id).order_by(ChatContext.timestamp.desc()).all()
+        return render_template("chat.html", contexts=user_contexts)
+
     
 import json
 import pandas as pd
@@ -746,128 +825,139 @@ def analytics():
 
     # Combine both datasets
     combined_data = realtime_data + pcap_data
-
-    # Convert to DataFrame
     df = pd.DataFrame(combined_data)
 
-    # Process the data for anomalies (1) and normal traffic (0)
-    df["label"] = df.apply(lambda row: 1 if row['type'] != 'normal' else 0, axis=1)
+    if not df.empty and 'type' in df.columns:
+        # Process the data for anomalies (1) and normal traffic (0)
+        df["label"] = df.apply(lambda row: 1 if row['type'] != 'normal' else 0, axis=1)
+        anomalies = df[df["label"] == 1].to_dict(orient="records")
+    else:
+        df = pd.DataFrame()
+        anomalies = []
 
-    # List of anomalies to display in the table
-    anomalies = df[df["label"] == 1].to_dict(orient="records")
+    # Compute distribution of attack types among anomalies
+    attack_distribution = {}
+    for row in anomalies:
+        attack = row.get("type", "unknown")
+        attack_distribution[attack] = attack_distribution.get(attack, 0) + 1
 
-    return render_template("analytics.html", df=df.to_json(orient="records"), anomalies=anomalies)
-
+    return render_template(
+        "analytics.html", 
+        df=df.to_json(orient="records"), 
+        anomalies=anomalies,
+        attack_distribution=json.dumps(attack_distribution)
+    )
 
 
 @app.route("/download-report")
 @login_required
 def download_report():
-    """Generate and download a properly formatted PDF report."""
+    import matplotlib
+    matplotlib.use('Agg')  # Non-GUI backend
+    import matplotlib.pyplot as plt
+    from textwrap import wrap
+    import re
+
+    # Combine anomalies from RealTimeResult & PCAPResult
     past_results = RealtimeResult.query.filter_by(user_id=current_user.id).all()
     pcap_results = PCAPResult.query.filter_by(user_id=current_user.id).all()
-
-    anomalies = []
-    for result in past_results:
+    all_packets = []
+    for result in past_results + pcap_results:
         try:
             data = json.loads(result.result)
-            anomalies.extend(data)
+            all_packets.extend(data)
         except:
             continue
 
-    # Check if no anomalies exist and handle this case
-    if not anomalies:
-        anomalies = [{"type": "None", "label": "None", "confidence": "N/A", "ts": "N/A"}]
+    # --- Filter out rows whose 'type' == 'normal' to match your /analytics logic ---
+    anomalies = [pkt for pkt in all_packets if pkt.get('type', 'unknown').lower() != 'normal']
+    total_anomalies = len(anomalies)
 
+    # Attack distribution for anomalies only
+    attack_distribution = {}
+    for anomaly in anomalies:
+        attack = anomaly.get("type", "unknown").lower()
+        attack_distribution[attack] = attack_distribution.get(attack, 0) + 1
+
+    # Generate bar chart with matplotlib
+    fig, ax = plt.subplots()
+    types = list(attack_distribution.keys())
+    counts = list(attack_distribution.values())
+    ax.bar(types, counts, color='skyblue')
+    ax.set_xlabel('Attack Type')
+    ax.set_ylabel('Count')
+    ax.set_title('Attack Distribution (Anomalies Only)')
+    plt.tight_layout()
+    chart_path = "attack_chart.png"
+    plt.savefig(chart_path)
+    plt.close()
+
+    # Chatbot for recommendations
+    prompt = (
+        f"Attack distribution: {attack_distribution}.\n"
+        "If there are no anomalous attacks (i.e. if 'normal' is the only traffic), then the network appears safe—please provide minimal, best-practice security recommendations to maintain this safety. "
+        "Otherwise, if there are anomalous attacks, please provide detailed security recommendations and cautions to prevent these types of attacks in the future."
+    )
+
+    recommendations = generate_chatbot_response(prompt)
+
+    # Remove simple Markdown bold: **text** => text
+    recommendations = re.sub(r'\*\*(.*?)\*\*', r'\1', recommendations)
+
+    # Generate PDF with ReportLab
     pdf_path = "analytics_report.pdf"
     c = canvas.Canvas(pdf_path, pagesize=letter)
-    
-    # Set the title of the document (this is what will show in the file name and title bar)
+
+    # Header
     c.setTitle("Intelligent Network Security Analysis Report")
-
-    c.setFont("Helvetica", 12)
-
-    # Add Company Header and Information
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(100, 750, "Intelligent Network Security")  # Company Name
+    c.drawString(100, 750, "Intelligent Network Security")
     c.setFont("Helvetica", 10)
     c.drawString(100, 730, "Av. das Forças Armadas, 1649-026 Lisboa, Portugal")
-    c.drawString(100, 710, "(Phone) 21 790 3000")
+    c.drawString(100, 710, "+351 968 714 451")
     c.drawString(100, 690, "jrpre1@iscte-iul.pt")
     c.drawString(100, 670, "https://www.iscte-iul.pt/")
 
-    # Add Report Title
+    # Report Title
     c.setFont("Helvetica-Bold", 14)
     c.drawString(100, 630, "Analysis Report")
-
-    # Add total anomalies count
     c.setFont("Helvetica", 12)
-    total_anomalies = len(anomalies)
     c.drawString(100, 610, f"Total Anomalies: {total_anomalies}")
+    c.drawString(100, 590, f"Unique Attack Types: {len(attack_distribution)}")
 
-    # Add Unique Attack Types
-    attack_types = set([anomaly.get("type", "Unknown") for anomaly in anomalies])
-    c.drawString(100, 590, f"Unique Attack Types: {len(attack_types)}")
-    
-    # List the different attack types
-    y_position = 580
-    c.setFont("Helvetica", 10)
-    for attack_type in attack_types:
-        c.drawString(100, y_position, f"- {attack_type}")
-        y_position -= 30
+    # Embed bar chart
+    c.drawImage(chart_path, 100, 400, width=400, height=200)
 
-    # Add Summary of Anomalies (Confidence, Timestamp, and Type)
+    # Recommendations heading
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(100, y_position - 20, "Anomalies Details:")
-    y_position -= 40  # Increase space between the title and the details
+    c.drawString(100, 370, "Recommendations:")
+
+    # Switch back to normal font for the text
     c.setFont("Helvetica", 10)
+    text_x = 100
+    text_y = 350
+    line_height = 14
 
-    for anomaly in anomalies:
-        label = anomaly.get("label", "Unknown")
-        attack_type = anomaly.get("type", "Unknown")
-        confidence = anomaly.get("confidence", "N/A")
-        
-        c.drawString(100, y_position, f" Type: {attack_type} | Label: {label} | Confidence: {confidence}")
-        y_position -= 20
-
-        # Start a new page if necessary
-        if y_position < 100:
-            c.showPage()
-            c.setFont("Helvetica", 10)
-            y_position = 750
-
-    # Add PCAP results to the report
-    if pcap_results:
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(100, y_position - 20, "PCAP Analysis Details:")
-        y_position -= 40
-        c.setFont("Helvetica", 10)
-
-        for pcap in pcap_results:
-            try:
-                data = json.loads(pcap.result)
-                for packet in data:
-                    timestamp = packet.get("ts", "Unknown")
-                    packet_type = packet.get("type", "Unknown")
-                    confidence = packet.get("confidence", "N/A")
-                    c.drawString(100, y_position, f"Timestamp: {timestamp} | Type: {packet_type} | Confidence: {confidence}")
-                    y_position -= 20
-
-                    # Start a new page if necessary
-                    if y_position < 100:
-                        c.showPage()
-                        c.setFont("Helvetica", 10)
-                        y_position = 750
-            except:
-                continue
+    recommendation_lines = recommendations.split("\n")
+    for line in recommendation_lines:
+        wrapped = wrap(line, width=90)
+        if not wrapped:  # if line is empty, add a blank line
+            wrapped = [""]
+        for subline in wrapped:
+            if text_y < 50:  # start a new page if near the bottom
+                c.showPage()
+                c.setFont("Helvetica", 10)
+                text_y = 750
+            c.drawString(text_x, text_y, subline)
+            text_y -= line_height
 
     c.save()
+
+    # Remove chart image
+    if os.path.exists(chart_path):
+        os.remove(chart_path)
+
     return send_file(pdf_path, as_attachment=True)
-
-
-
-
-
 
 if __name__ == "__main__":
     with app.app_context():

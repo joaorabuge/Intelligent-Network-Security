@@ -45,7 +45,7 @@ def generate_chatbot_response(query, context=None):
     # Revised system instructions to guide conversation flow:
     system_message = (
         "You are a network security assistant. Your task is to help users understand and mitigate network attacks "
-        "based on the provided network summary context."
+        "based on the provided network summary context (zeek logs)."
     )
     
     try:
