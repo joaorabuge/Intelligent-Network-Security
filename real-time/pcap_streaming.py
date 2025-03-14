@@ -382,11 +382,11 @@ def classify_traffic(data):
             if malign_confidence < 0.85:  # Limite de confiança para maligno
                 results.append({
                     "label": "maligno", 
-                    "type": "Tráfego anómalo", 
+                    "type": "Unknown Traffic", 
                     "confidence": malign_confidence
                 })
                 predicted_data.at[idx, "label"] = 1
-                predicted_data.at[idx, "type"] = "Tráfego anómalo"
+                predicted_data.at[idx, "type"] = "Unknown Traffic"
                 predicted_data.at[idx, "confidence"] = malign_confidence
             else:
                 results.append({

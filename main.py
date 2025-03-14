@@ -914,7 +914,7 @@ def download_report():
     c.drawString(100, 750, "Intelligent Network Security")
     c.setFont("Helvetica", 10)
     c.drawString(100, 730, "Av. das Forças Armadas, 1649-026 Lisboa, Portugal")
-    c.drawString(100, 710, "(Phone) 21 790 3000")
+    c.drawString(100, 710, "+351 968 714 451")
     c.drawString(100, 690, "jrpre1@iscte-iul.pt")
     c.drawString(100, 670, "https://www.iscte-iul.pt/")
 
