@@ -33,12 +33,12 @@
 
     <!-- Report Download Button -->
     <div class="text-center mt-4">
-        <a href="{{ url_for('download_report') }}" class="btn btn-primary px-4">Download Report (PDF)</a>
+        <a href="{{ url_for('download_report') }}" class="btn btn-primary px-4" id="downloadReportBtn">Download Report (PDF)</a>
     </div>
 </div>
 
 <div class="text-center mt-4">
-    <a href="{{ url_for('home') }}" class="btn btn-info">Back to Home</a>
+    <a href="{{ url_for('home') }}" class="btn btn-info" id="backToHomeBtn">Back to Home</a>
 </div>
 
 <!-- Include Chart.js from CDN -->
@@ -50,7 +50,6 @@ document.addEventListener("DOMContentLoaded", function() {
 
     if (!df.length) {
         console.log("No data available for analytics.");
-        // Still initialize counts as 0.
         document.getElementById("total-anomalies").innerText = 0;
         document.getElementById("attack-types").innerText = 0;
         return;
@@ -70,7 +69,7 @@ document.addEventListener("DOMContentLoaded", function() {
     const attackTypesElement = document.getElementById("attack-types");
     attackTypesElement.setAttribute("data-bs-original-title", attackTypesTooltip);
 
-    // Initialize Bootstrap tooltip
+    // Initialize Bootstrap tooltips
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.forEach(function (tooltipTriggerEl) {
         new bootstrap.Tooltip(tooltipTriggerEl);
@@ -99,13 +98,58 @@ document.addEventListener("DOMContentLoaded", function() {
              scales: {
                  y: {
                      beginAtZero: true,
-                     ticks: {
-                         stepSize: 1
-                     }
+                     ticks: { stepSize: 1 }
                  }
              }
          }
     });
+});
+
+// Back to Home button behavior
+document.getElementById("backToHomeBtn").addEventListener("click", function(e) {
+    e.preventDefault();
+    this.innerText = "Loading...";
+    this.classList.add("disabled");
+    setTimeout(() => {
+        window.location.href = this.href;
+    }, 100);
+});
+
+// Download Report button behavior using fetch (all on the same page)
+document.getElementById("downloadReportBtn").addEventListener("click", function(e) {
+    e.preventDefault();
+    const btn = this;
+    const originalText = btn.innerText;
+    btn.innerText = "Downloading...";
+    btn.classList.add("disabled");
+
+    fetch(btn.href)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error("Network response was not ok");
+            }
+            return response.blob();
+        })
+        .then(blob => {
+            // Create a temporary link to trigger the download
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.style.display = "none";
+            a.href = url;
+            // Define o nome do arquivo
+            a.download = "analytics_report.pdf";
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+            btn.innerText = originalText;
+            btn.classList.remove("disabled");
+        })
+        .catch(error => {
+            console.error("Download failed:", error);
+            btn.innerText = originalText;
+            btn.classList.remove("disabled");
+        });
 });
 </script>
 {% endblock %}

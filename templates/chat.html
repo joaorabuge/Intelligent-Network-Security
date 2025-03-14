@@ -4,7 +4,6 @@
 <div class="container mt-4">
   <h2 class="text-center mb-4 text-white"><strong>Mitigation Chatbot</strong></h2>
   
-  
   <!-- Context Selection -->
   {% if contexts %}
   <div class="mb-3">
@@ -37,7 +36,7 @@
   </form>
 </div>
 <div class="text-center mt-4">
-  <a href="{{ url_for('home') }}" class="btn btn-info">Back to Home</a>
+  <a href="{{ url_for('home') }}" class="btn btn-info" id="backToHomeBtn">Back to Home</a>
 </div>
 
 <style>
@@ -50,28 +49,24 @@
     line-height: 1.4;
     word-wrap: break-word;
   }
-
   .chat-message.user {
     background-color: #007bff;
     color: #fff;
     border-bottom-right-radius: 0;
     align-self: flex-end;
   }
-
   .chat-message.bot {
     background-color: #6c757d;
     color: #fff;
     border-bottom-left-radius: 0;
     align-self: flex-start;
   }
-
   .chat-label {
     font-size: 0.8rem;
     font-weight: bold;
     display: block;
     margin-bottom: 5px;
   }
-
   /* Chat Box Styles */
   #chat-box {
     display: flex;
@@ -79,17 +74,14 @@
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: white;
   }
-
   /* Input Styles */
   .form-control {
     background-color: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.3);
   }
-
   .form-control::placeholder {
     color: #cfd8dc;
   }
-
   .form-control:focus {
     background-color: rgba(255, 255, 255, 0.15);
     border-color: #4ea8de;
@@ -147,9 +139,21 @@ document.getElementById("chat-form").addEventListener("submit", function(e) {
 window.addEventListener('DOMContentLoaded', (event) => {
   let alerts = document.querySelectorAll('.alert');
   alerts.forEach((alert) => {
-    // Add the 'show' class to trigger the fade-in transition
     alert.classList.add('show');
   });
+  
+  // Back to Home button behavior
+  const backToHomeBtn = document.getElementById("backToHomeBtn");
+  if (backToHomeBtn) {
+      backToHomeBtn.addEventListener("click", function(e) {
+          e.preventDefault();
+          this.innerText = "Loading...";
+          this.classList.add("disabled");
+          setTimeout(() => {
+              window.location.href = this.href;
+          }, 100);
+      });
+  }
 });
 </script>
 {% endblock %}
