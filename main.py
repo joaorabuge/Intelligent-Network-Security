@@ -26,6 +26,8 @@ from reportlab.pdfgen import canvas
 from flask import jsonify
 from datetime import datetime
 import pytz
+import threading
+import webbrowser
 
 
 
@@ -50,6 +52,25 @@ login_manager.init_app(app)
 
 login_manager.login_view = "login"
 login_manager.login_message_category = "info"
+
+GLOBAL_UPDATE_FILE = os.path.join(DATASET_DIR, "global_update_time.txt")
+
+def load_global_update_time():
+    if os.path.exists(GLOBAL_UPDATE_FILE):
+        with open(GLOBAL_UPDATE_FILE, "r") as f:
+            try:
+                return float(f.read().strip())
+            except:
+                return 0
+    return 0
+
+def save_global_update_time(ts):
+    with open(GLOBAL_UPDATE_FILE, "w") as f:
+        f.write(str(ts))
+
+def open_browser():
+    webbrowser.open_new("http://127.0.0.1:5000")
+
 
 import time
 
@@ -140,33 +161,36 @@ def save_pipeline_state(state):
 # Variável global para armazenar o tempo da última verificação do hash
 LAST_HASH_CHECK = None
 
-def check_for_updates():
+def check_for_updates(user):
     global LAST_HASH_CHECK
     agora = time.time()
-    # Se já houve verificação e passou menos de 1 hora (3600 segundos), pula a verificação
+    # Verifica a atualização global apenas se já não tiver sido feita nos últimos 3600 segundos
     if LAST_HASH_CHECK is not None and (agora - LAST_HASH_CHECK) < 3600:
-        print("DEBUG: Verificação de hash pulada (executada recentemente)")
-        return False  # ou retornar o estado atual se preferir
-    # Atualiza o timestamp da última verificação
-    LAST_HASH_CHECK = agora
-
-    print("\n--- Verificando atualizações no dataset ---")
-    current_hash = calculate_dataset_hash()
-    previous_hash = load_previous_hash()
-    pipeline_state = load_pipeline_state()
-    print(f"DEBUG: Hash atual: {current_hash}, Hash anterior: {previous_hash}, Estado do pipeline: {pipeline_state}")
-
-    if current_hash != previous_hash:
-        print("Novos dados detectados!")
-        save_current_hash(current_hash)
-        save_pipeline_state("pending")  # Define como pendente
-        return True
-    elif pipeline_state == "pending":
-        print("Pipeline pendente de execução.")
+        print("DEBUG: Checagem global de dataset pulada (executada recentemente)")
+    else:
+        LAST_HASH_CHECK = agora  # Atualiza a checagem global
+        print("\n--- Verificando atualizações no dataset ---")
+        current_hash = calculate_dataset_hash()
+        previous_hash = load_previous_hash()
+        pipeline_state = load_pipeline_state()
+        print(f"DEBUG: Hash atual: {current_hash}, Hash anterior: {previous_hash}, Estado do pipeline: {pipeline_state}")
+        if current_hash != previous_hash:
+            print("Novos dados detectados!")
+            save_current_hash(current_hash)
+            save_pipeline_state("pending")  # Define como pendente
+            save_global_update_time(agora)    # Atualiza o timestamp global
+        elif pipeline_state == "pending":
+            print("Pipeline pendente de execução.")
+        else:
+            print("Nenhuma atualização detectada.")
+    
+    # Compara o timestamp global com o timestamp de atualização do modelo para o usuário
+    global_update_time = load_global_update_time()
+    if user.last_model_update_time is None or user.last_model_update_time.timestamp() < global_update_time:
         return True
     else:
-        print("Nenhuma atualização detectada.")
         return False
+
 
 
 
@@ -430,17 +454,15 @@ def dashboard():
     pcap_results = PCAPResult.query.filter_by(user_id=current_user.id).all()
     realtime_results = RealtimeResult.query.filter_by(user_id=current_user.id).all()
     active_interfaces = get_active_interfaces()  # Obtém interfaces ativas
-
-    # Verificar atualizações
-    update_available = check_for_updates()
-
+    update_available = check_for_updates(current_user)
     return render_template(
         "dashboard.html",
         pcap_results=pcap_results,
         realtime_results=realtime_results,
-        active_interfaces=active_interfaces,  # Passa interfaces para o template
-        update_available=update_available  # Passa se há atualizações disponíveis
+        active_interfaces=active_interfaces,
+        update_available=update_available
     )
+
 @app.route("/real-time", methods=["GET"])
 @login_required
 def realtime_analysis():
@@ -746,19 +768,17 @@ def pipeline_status():
 @app.route("/update-model", methods=["POST"])
 @login_required
 def update_model():
-    """
-    Executa o pipeline para combinar CSVs, pré-processar os dados e treinar o modelo.
-    """
     try:
         if update_pipeline():
-            save_pipeline_state("completed")  # Atualiza o estado para concluído
-            flash("Model updated with success!", "success")
+            save_pipeline_state("completed")  # Atualiza o estado global do pipeline
+            current_user.update_model_timestamp()  # Atualiza o timestamp para o usuário atual
         else:
             flash("Error updating model. Check the logs.", "danger")
     except Exception as e:
-        save_pipeline_state("error")  # Define como erro em caso de falha
+        save_pipeline_state("error")
         flash(f"Error updating model: {e}", "danger")
     return redirect(url_for("dashboard"))
+
 
 @app.route("/delete-all-results", methods=["POST"])
 @login_required
@@ -976,4 +996,6 @@ def download_report():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
+    threading.Timer(1, open_browser).start()
+    app.run(debug=False)
+
