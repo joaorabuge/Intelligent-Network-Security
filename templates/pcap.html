@@ -9,6 +9,11 @@
                 <label class="form-label">PCAP File:</label>
                 <input type="file" name="pcap_file" class="form-control" required>
             </div>
+            <!-- New input field for analysis name -->
+            <div class="mb-3">
+                <label for="analysis_name">Analysis Name (optional):</label>
+                <input type="text" class="form-control" id="analysis_name" name="analysis_name" placeholder="Enter a custom analysis name">
+            </div>
             <button type="submit" class="btn btn-info" id="processFileButton">Analyze File</button>
         </form>
     </div>
@@ -19,14 +24,12 @@
 </div>
 
 <script>
-  // Ao enviar o formulário, o botão "Process File" muda para "Loading..." e é desabilitado
-  document.getElementById("processFileButton").addEventListener("submit", function() {
+  document.getElementById("pcapForm").addEventListener("submit", function() {
       const btn = document.getElementById("processFileButton");
       btn.innerText = "Analyzing...";
       btn.disabled = true;
   });
 
-  // Ao clicar no link "Back to Dashboard", o texto muda para "Loading..." e o link é desabilitado temporariamente
   document.getElementById("backToDashboardBtn").addEventListener("click", function(e) {
       e.preventDefault();
       this.innerText = "Loading...";

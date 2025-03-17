@@ -8,10 +8,10 @@
   {% if contexts %}
   <div class="mb-3">
     <label for="context_id" class="form-label text-white">Choose Analysis Context:</label>
-    <select id="context_id" name="context_id" class="form-select bg-dark text-white">
+    <select id="context_id" name="context_id" class="form-select bg-dark text-white" style="min-width: 600px;">
       {% for context in contexts %}
-      <option value="{{ context.id }}">
-        {{ context.file_path }} - {{ context.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+      <option value="{{ context.id }}" {% if current_context and context.id == current_context.id %}selected{% endif %}>
+        {{ context.analysis_name if context.analysis_name else context.file_path }} - {{ context.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
       </option>
       {% endfor %}
     </select>
@@ -24,7 +24,11 @@
   
   <!-- Chat Box -->
   <div id="chat-box" class="border rounded p-3" style="height:400px; overflow-y: auto; background-color: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px);">
-    <!-- Chat messages will appear here -->
+    {% for msg in messages %}
+      <div class="chat-message {{ msg.sender }}" style="text-align: {{ 'right' if msg.sender == 'user' else 'left' }};">  
+        <span class="chat-label">{{ current_user.username if msg.sender == 'user' else 'Chatbot:' }}</span>{{ msg.message|safe }}
+      </div>
+    {% endfor %}
   </div>
 
   <!-- Chat Input Form -->
@@ -38,6 +42,11 @@
 <div class="text-center mt-4">
   <a href="{{ url_for('home') }}" class="btn btn-info" id="backToHomeBtn">Back to Home</a>
 </div>
+
+<!-- Define a JavaScript variable for the user's name -->
+<script>
+  var currentUserName = "{{ current_user.username }}";
+</script>
 
 <style>
   /* Chat bubble styles */
@@ -101,7 +110,7 @@ function appendMessage(sender, text) {
   const chatBox = document.getElementById("chat-box");
   const msgDiv = document.createElement("div");
   msgDiv.classList.add("chat-message", sender === "user" ? "user" : "bot");
-  msgDiv.innerHTML = `<span class="chat-label">${sender === "user" ? "You:" : "Chatbot:"}</span>${text}`;
+  msgDiv.innerHTML = `<span class="chat-label">${sender === "user" ? currentUserName + ':' : "Chatbot:"}</span>${text}`;
   msgDiv.style.textAlign = sender === "user" ? "right" : "left";
   chatBox.appendChild(msgDiv);
   chatBox.scrollTop = chatBox.scrollHeight;
@@ -133,6 +142,11 @@ document.getElementById("chat-form").addEventListener("submit", function(e) {
         appendMessage("bot", formattedResponse);
     })
     .catch(error => console.error("Error:", error));
+});
+
+// When the context selection changes, reload the page with the selected context's chat history.
+document.getElementById("context_id").addEventListener("change", function() {
+    window.location.href = "/chat?context_id=" + this.value;
 });
 
 // Handle flash message transitions without a timer

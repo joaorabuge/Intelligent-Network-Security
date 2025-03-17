@@ -21,6 +21,11 @@
                 <label for="password">Administrator Password</label>
                 <input type="password" class="form-control" id="password" name="password" placeholder="Enter the password">
             </div>
+            <!-- New input field for analysis name -->
+            <div class="mb-3">
+                <label for="analysis_name">Analysis Name (optional):</label>
+                <input type="text" class="form-control" id="analysis_name" name="analysis_name" placeholder="Enter a custom analysis name">
+            </div>
             <button type="submit" class="btn btn-info" id="startCaptureButton">Start Capture</button>
         </form>
     </div>
@@ -31,14 +36,12 @@
 </div>
 
 <script>
-  // Ao enviar o formulário, o botão "Start Capture" muda para "Loading..." e é desabilitado
   document.getElementById("captureForm").addEventListener("submit", function() {
       const btn = document.getElementById("startCaptureButton");
       btn.innerText = "Analyzing...";
       btn.disabled = true;
   });
   
-  // Ao clicar no link "Back to Dashboard", o texto muda para "Loading..." e o link é desabilitado temporariamente
   document.getElementById("backToDashboardBtn").addEventListener("click", function(e) {
       e.preventDefault();
       this.innerText = "Loading...";

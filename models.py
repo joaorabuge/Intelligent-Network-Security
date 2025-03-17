@@ -3,6 +3,7 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, UserMixin
+from sqlalchemy.orm import backref
 from datetime import datetime  # Import para trabalhar com datas
 
 db = SQLAlchemy()  # Inicialização do banco de dados
@@ -34,8 +35,26 @@ class ChatContext(db.Model):
     analysis_type = db.Column(db.String(50), nullable=False)  # ex.: "real_time" ou "pcap"
     result_id = db.Column(db.Integer, nullable=False)         # ID do resultado correspondente
     file_path = db.Column(db.String(255), nullable=False)
+    analysis_name = db.Column(db.String(255), nullable=True)    # <-- New field for a custom name
     timestamp = db.Column(db.DateTime, default=db.func.now())
     user = db.relationship('User', backref='chat_contexts')
+
+
+# Novo modelo para armazenar mensagens do chat
+class ChatMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    context_id = db.Column(db.Integer, db.ForeignKey('chat_context.id'), nullable=False)
+    sender = db.Column(db.String(10), nullable=False)  # 'user' or 'bot'
+    message = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Update the relationship to ChatContext with cascade:
+    context = db.relationship(
+        'ChatContext',
+        backref=backref('messages', cascade="all, delete-orphan"),
+        lazy=True
+    )
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)

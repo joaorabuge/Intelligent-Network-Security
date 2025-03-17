@@ -10,7 +10,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from models import db, bcrypt, login_manager, User, PCAPResult, RealtimeResult, ChatContext
+from models import db, bcrypt, login_manager, User, PCAPResult, RealtimeResult, ChatContext, ChatMessage
 from config import Config
 from real_time_streaming import clean_previous_files, start_zeek_capture, process_zeek_logs, classify_traffic
 from real_time_streaming import get_active_interfaces
@@ -479,6 +479,8 @@ def realtime():
         interface = request.form["interface"]
         duration = int(request.form["duration"])
         password = request.form.get("password", None)
+        # Get the optional analysis name
+        analysis_name = request.form.get("analysis_name") or f"Real-Time Analysis {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
 
         try:
             clean_previous_files()
@@ -488,10 +490,9 @@ def realtime():
 
             # Save results in the database
             result_text = json.dumps(results)
-            # After saving the RealtimeResult:
             new_result = RealtimeResult(result=result_text, user_id=current_user.id)
             db.session.add(new_result)
-            db.session.commit()  # Now new_result.id is available
+            db.session.commit()  # new_result.id is now available
 
             # --- Generate and store context ---
             try:
@@ -499,19 +500,18 @@ def realtime():
                     user_id=current_user.id, 
                     analysis_type="real_time"
                 )
-                from models import ChatContext  # Ensure ChatContext is imported
                 new_context = ChatContext(
                     user_id=current_user.id, 
                     analysis_type="real_time",
                     result_id=new_result.id,
-                    file_path=combined_file_path
+                    file_path=combined_file_path,
+                    analysis_name=analysis_name  # Save the custom name
                 )
                 db.session.add(new_context)
                 db.session.commit()
             except Exception as e:
                 print("Error creating chat context:", e)
             # --- End New Code ---
-
 
             flash("Real-Time traffic analyzed successfully!", "success")
             return render_template("realtime_results.html", results=results, graph_data=graph_data)
@@ -521,6 +521,7 @@ def realtime():
             return redirect(url_for("dashboard"))
 
     return render_template("realtime.html", active_interfaces=active_interfaces)
+
 
 
 
@@ -544,6 +545,9 @@ def process_pcap_file():
             flash("No archive selected.", "danger")
             return redirect(url_for("dashboard"))
 
+        # Get the optional analysis name from the form
+        analysis_name = request.form.get("analysis_name") or f"PCAP Analysis {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
         try:
             pcap_path = os.path.join("uploads", file.filename)
             os.makedirs("uploads", exist_ok=True)
@@ -565,12 +569,12 @@ def process_pcap_file():
             # --- Generate and store context ---
             try:
                 combined_file_path = combine_raw_and_final(user_id=current_user.id, analysis_type="pcap")
-                from models import ChatContext
                 new_context = ChatContext(
                     user_id=current_user.id,
                     analysis_type="pcap",
                     result_id=new_result.id,
-                    file_path=combined_file_path
+                    file_path=combined_file_path,
+                    analysis_name=analysis_name  # Save the custom name
                 )
                 db.session.add(new_context)
                 db.session.commit()
@@ -578,7 +582,6 @@ def process_pcap_file():
                 print("Error creating chat context:", e)
             # --- End New Code ---
 
-            # Retorne uma resposta válida
             return render_template("pcap_results.html", results=results, graph_data=graph_data)
 
         except Exception as e:
@@ -586,6 +589,7 @@ def process_pcap_file():
             return redirect(url_for("dashboard"))
     else:
         return redirect(url_for("dashboard"))
+
 
 
 
@@ -715,16 +719,18 @@ def view_pcap_result(result_id):
 @app.route("/results")
 @login_required
 def results():
-    pcap_results = PCAPResult.query.filter_by(user_id=current_user.id).all()
-    realtime_results = RealtimeResult.query.filter_by(user_id=current_user.id).all()
-    return render_template("results.html", pcap_results=pcap_results, realtime_results=realtime_results)
+    # Query ChatContext records for PCAP and real-time analyses
+    pcap_contexts = ChatContext.query.filter_by(user_id=current_user.id, analysis_type="pcap").order_by(ChatContext.timestamp.desc()).all()
+    realtime_contexts = ChatContext.query.filter_by(user_id=current_user.id, analysis_type="real_time").order_by(ChatContext.timestamp.desc()).all()
+    return render_template("results.html", pcap_contexts=pcap_contexts, realtime_contexts=realtime_contexts)
+
 
 
 @app.route("/delete-realtime-result/<int:result_id>", methods=["POST"])
 @login_required
 def delete_realtime_result(result_id):
     result = RealtimeResult.query.filter_by(id=result_id, user_id=current_user.id).first_or_404()
-    # Find associated ChatContext(s) for this real-time result
+    # Delete associated ChatContext(s) (and via cascade, the messages)
     contexts = ChatContext.query.filter_by(
         user_id=current_user.id,
         analysis_type="real_time",
@@ -737,6 +743,7 @@ def delete_realtime_result(result_id):
     db.session.delete(result)
     db.session.commit()
     return redirect(url_for("results"))
+
 
 
 @app.route("/delete-pcap-result/<int:result_id>", methods=["POST"])
@@ -752,10 +759,11 @@ def delete_pcap_result(result_id):
     for ctx in contexts:
         if os.path.exists(ctx.file_path):
             os.remove(ctx.file_path)
-        db.session.delete(ctx)
+        db.session.delete(ctx)  # This deletion will cascade to remove ChatMessage records (if configured)
     db.session.delete(result)
     db.session.commit()
     return redirect(url_for("results"))
+
 
 
 
@@ -788,7 +796,7 @@ def delete_all_results():
         PCAPResult.query.filter_by(user_id=current_user.id).delete()
         RealtimeResult.query.filter_by(user_id=current_user.id).delete()
         
-        # Find all ChatContext records for the user and remove the files
+        # Delete all ChatContext records (cascade deletes messages)
         contexts = ChatContext.query.filter_by(user_id=current_user.id).all()
         for ctx in contexts:
             if os.path.exists(ctx.file_path):
@@ -800,37 +808,73 @@ def delete_all_results():
     return redirect(url_for("dashboard"))
 
 
+
 @app.route("/chat", methods=["GET", "POST"])
 @login_required
 def chat():
     if request.method == "POST":
         user_message = request.form.get("message")
-        # You might pass a selected context (file_path) from a dropdown in your form.
-        # Here, if no context is selected, we'll use the latest context.
         context_id = request.form.get("context_id")
+        
+        # Retrieve the context record using the provided context_id or fallback to the latest context.
         if context_id:
             context_record = ChatContext.query.filter_by(id=context_id, user_id=current_user.id).first()
-            combined_file_path = context_record.file_path if context_record else None
         else:
-            # Use the latest context for this user if no context is explicitly chosen.
-            latest_context = ChatContext.query.filter_by(user_id=current_user.id).order_by(ChatContext.timestamp.desc()).first()
-            combined_file_path = latest_context.file_path if latest_context else None
+            context_record = ChatContext.query.filter_by(user_id=current_user.id).order_by(ChatContext.timestamp.desc()).first()
 
-        if not combined_file_path:
+        if not context_record:
             flash("No analysis context available. Run an analysis first.", "danger")
             return redirect(url_for("dashboard"))
 
+        # Save the user message in the database
+        new_user_msg = ChatMessage(
+            user_id=current_user.id,
+            context_id=context_record.id,
+            sender="user",
+            message=user_message
+        )
+        db.session.add(new_user_msg)
+        db.session.commit()
+
+        # Load context data for the chatbot
         try:
-            context_data = get_network_context_from_combined(combined_file_path)
+            context_data = get_network_context_from_combined(context_record.file_path)
         except Exception as e:
+            flash("Error loading network context.", "danger")
             return redirect(url_for("dashboard"))
-            
+        
         response_message = generate_chatbot_response(user_message, context=context_data)
+        
+        # Save the bot response in the database
+        new_bot_msg = ChatMessage(
+            user_id=current_user.id,
+            context_id=context_record.id,
+            sender="bot",
+            message=response_message
+        )
+        db.session.add(new_bot_msg)
+        db.session.commit()
+        
         return jsonify({"response": response_message})
     else:
-        # Pass the user's saved contexts to the template for selection.
+        # For GET: allow an optional query parameter to select a context (default to latest)
+        selected_context_id = request.args.get("context_id")
+        if selected_context_id:
+            current_context = ChatContext.query.filter_by(id=selected_context_id, user_id=current_user.id).first()
+        else:
+            current_context = ChatContext.query.filter_by(user_id=current_user.id).order_by(ChatContext.timestamp.desc()).first()
+        
+        if current_context:
+            chat_messages = ChatMessage.query.filter_by(
+                user_id=current_user.id,
+                context_id=current_context.id
+            ).order_by(ChatMessage.timestamp.asc()).all()
+        else:
+            chat_messages = []
+        
         user_contexts = ChatContext.query.filter_by(user_id=current_user.id).order_by(ChatContext.timestamp.desc()).all()
-        return render_template("chat.html", contexts=user_contexts)
+        return render_template("chat.html", contexts=user_contexts, messages=chat_messages, current_context=current_context)
+
 
     
 import json
