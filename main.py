@@ -730,7 +730,7 @@ def results():
 @login_required
 def delete_realtime_result(result_id):
     result = RealtimeResult.query.filter_by(id=result_id, user_id=current_user.id).first_or_404()
-    # Find associated ChatContext(s) for this real-time result
+    # Delete associated ChatContext(s) (and via cascade, the messages)
     contexts = ChatContext.query.filter_by(
         user_id=current_user.id,
         analysis_type="real_time",
@@ -743,6 +743,7 @@ def delete_realtime_result(result_id):
     db.session.delete(result)
     db.session.commit()
     return redirect(url_for("results"))
+
 
 
 @app.route("/delete-pcap-result/<int:result_id>", methods=["POST"])
@@ -758,10 +759,11 @@ def delete_pcap_result(result_id):
     for ctx in contexts:
         if os.path.exists(ctx.file_path):
             os.remove(ctx.file_path)
-        db.session.delete(ctx)
+        db.session.delete(ctx)  # This deletion will cascade to remove ChatMessage records (if configured)
     db.session.delete(result)
     db.session.commit()
     return redirect(url_for("results"))
+
 
 
 
@@ -794,7 +796,7 @@ def delete_all_results():
         PCAPResult.query.filter_by(user_id=current_user.id).delete()
         RealtimeResult.query.filter_by(user_id=current_user.id).delete()
         
-        # Find all ChatContext records for the user and remove the files
+        # Delete all ChatContext records (cascade deletes messages)
         contexts = ChatContext.query.filter_by(user_id=current_user.id).all()
         for ctx in contexts:
             if os.path.exists(ctx.file_path):
@@ -804,6 +806,7 @@ def delete_all_results():
     except Exception as e:
         db.session.rollback()
     return redirect(url_for("dashboard"))
+
 
 
 @app.route("/chat", methods=["GET", "POST"])

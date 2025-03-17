@@ -3,6 +3,7 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, UserMixin
+from sqlalchemy.orm import backref
 from datetime import datetime  # Import para trabalhar com datas
 
 db = SQLAlchemy()  # Inicialização do banco de dados
@@ -44,13 +45,16 @@ class ChatMessage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     context_id = db.Column(db.Integer, db.ForeignKey('chat_context.id'), nullable=False)
-    sender = db.Column(db.String(10), nullable=False)  # 'user' ou 'bot'
+    sender = db.Column(db.String(10), nullable=False)  # 'user' or 'bot'
     message = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Relacionamentos para facilitar o acesso aos dados
-    user = db.relationship('User', backref='chat_messages', lazy=True)
-    context = db.relationship('ChatContext', backref='messages', lazy=True)
+    # Update the relationship to ChatContext with cascade:
+    context = db.relationship(
+        'ChatContext',
+        backref=backref('messages', cascade="all, delete-orphan"),
+        lazy=True
+    )
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
