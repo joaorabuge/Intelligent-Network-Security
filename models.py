@@ -34,8 +34,10 @@ class ChatContext(db.Model):
     analysis_type = db.Column(db.String(50), nullable=False)  # ex.: "real_time" ou "pcap"
     result_id = db.Column(db.Integer, nullable=False)         # ID do resultado correspondente
     file_path = db.Column(db.String(255), nullable=False)
+    analysis_name = db.Column(db.String(255), nullable=True)    # <-- New field for a custom name
     timestamp = db.Column(db.DateTime, default=db.func.now())
     user = db.relationship('User', backref='chat_contexts')
+
 
 # Novo modelo para armazenar mensagens do chat
 class ChatMessage(db.Model):

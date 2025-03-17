@@ -6,12 +6,15 @@
     <div class="card mt-4 shadow-sm">
         <div class="card-body">
             <h5 class="card-title">PCAP Results</h5>
-            {% if pcap_results %}
+            {% if pcap_contexts %}
                 <ul class="list-group">
-                    {% for result in pcap_results %}
+                    {% for context in pcap_contexts %}
                         <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <span><strong>Timestamp:</strong> {{ result.timestamp }}</span>
-                            <a href="{{ url_for('view_pcap_result', result_id=result.id) }}" class="btn btn-primary btn-sm">View Details</a>
+                            <span>
+                                <strong>Analysis Name:</strong> {{ context.analysis_name }}<br>
+                                <strong>Timestamp:</strong> {{ context.timestamp }}
+                            </span>
+                            <a href="{{ url_for('view_pcap_result', result_id=context.result_id) }}" class="btn btn-primary btn-sm">View Details</a>
                         </li>
                     {% endfor %}
                 </ul>
@@ -24,12 +27,15 @@
     <div class="card mt-4 shadow-sm">
         <div class="card-body">
             <h5 class="card-title">Real-Time Results</h5>
-            {% if realtime_results %}
+            {% if realtime_contexts %}
                 <ul class="list-group">
-                    {% for result in realtime_results %}
+                    {% for context in realtime_contexts %}
                         <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <span><strong>Timestamp:</strong> {{ result.timestamp }}</span>
-                            <a href="{{ url_for('view_realtime_result', result_id=result.id) }}" class="btn btn-primary btn-sm">View Details</a>
+                            <span>
+                                <strong>Analysis Name:</strong> {{ context.analysis_name }}<br>
+                                <strong>Timestamp:</strong> {{ context.timestamp }}
+                            </span>
+                            <a href="{{ url_for('view_realtime_result', result_id=context.result_id) }}" class="btn btn-primary btn-sm">View Details</a>
                         </li>
                     {% endfor %}
                 </ul>
@@ -51,7 +57,7 @@
 </div>
 
 <script>
-  // Adiciona listener para o formulário de "Delete All Results"
+  // Listener for "Delete All Results" form
   const deleteAllForm = document.getElementById("deleteAllForm");
   if (deleteAllForm) {
       deleteAllForm.addEventListener("submit", function() {
@@ -61,14 +67,12 @@
       });
   }
 
-  // Adiciona listener para todos os links com a classe "btn"
+  // Update button text on click for links with the 'btn' class
   document.querySelectorAll('a.btn').forEach(anchor => {
       anchor.addEventListener('click', function(e) {
-          // Interrompe a navegação imediata para atualizar o botão
           e.preventDefault();
           this.innerText = "Loading...";
           this.classList.add("disabled");
-          // Redireciona após um curto delay
           setTimeout(() => {
               window.location.href = this.href;
           }, 100);

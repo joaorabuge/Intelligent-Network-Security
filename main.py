@@ -479,6 +479,8 @@ def realtime():
         interface = request.form["interface"]
         duration = int(request.form["duration"])
         password = request.form.get("password", None)
+        # Get the optional analysis name
+        analysis_name = request.form.get("analysis_name") or f"Real-Time Analysis {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
 
         try:
             clean_previous_files()
@@ -488,10 +490,9 @@ def realtime():
 
             # Save results in the database
             result_text = json.dumps(results)
-            # After saving the RealtimeResult:
             new_result = RealtimeResult(result=result_text, user_id=current_user.id)
             db.session.add(new_result)
-            db.session.commit()  # Now new_result.id is available
+            db.session.commit()  # new_result.id is now available
 
             # --- Generate and store context ---
             try:
@@ -499,19 +500,18 @@ def realtime():
                     user_id=current_user.id, 
                     analysis_type="real_time"
                 )
-                from models import ChatContext  # Ensure ChatContext is imported
                 new_context = ChatContext(
                     user_id=current_user.id, 
                     analysis_type="real_time",
                     result_id=new_result.id,
-                    file_path=combined_file_path
+                    file_path=combined_file_path,
+                    analysis_name=analysis_name  # Save the custom name
                 )
                 db.session.add(new_context)
                 db.session.commit()
             except Exception as e:
                 print("Error creating chat context:", e)
             # --- End New Code ---
-
 
             flash("Real-Time traffic analyzed successfully!", "success")
             return render_template("realtime_results.html", results=results, graph_data=graph_data)
@@ -521,6 +521,7 @@ def realtime():
             return redirect(url_for("dashboard"))
 
     return render_template("realtime.html", active_interfaces=active_interfaces)
+
 
 
 
@@ -544,6 +545,9 @@ def process_pcap_file():
             flash("No archive selected.", "danger")
             return redirect(url_for("dashboard"))
 
+        # Get the optional analysis name from the form
+        analysis_name = request.form.get("analysis_name") or f"PCAP Analysis {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
         try:
             pcap_path = os.path.join("uploads", file.filename)
             os.makedirs("uploads", exist_ok=True)
@@ -565,12 +569,12 @@ def process_pcap_file():
             # --- Generate and store context ---
             try:
                 combined_file_path = combine_raw_and_final(user_id=current_user.id, analysis_type="pcap")
-                from models import ChatContext
                 new_context = ChatContext(
                     user_id=current_user.id,
                     analysis_type="pcap",
                     result_id=new_result.id,
-                    file_path=combined_file_path
+                    file_path=combined_file_path,
+                    analysis_name=analysis_name  # Save the custom name
                 )
                 db.session.add(new_context)
                 db.session.commit()
@@ -578,7 +582,6 @@ def process_pcap_file():
                 print("Error creating chat context:", e)
             # --- End New Code ---
 
-            # Retorne uma resposta válida
             return render_template("pcap_results.html", results=results, graph_data=graph_data)
 
         except Exception as e:
@@ -586,6 +589,7 @@ def process_pcap_file():
             return redirect(url_for("dashboard"))
     else:
         return redirect(url_for("dashboard"))
+
 
 
 
@@ -715,9 +719,11 @@ def view_pcap_result(result_id):
 @app.route("/results")
 @login_required
 def results():
-    pcap_results = PCAPResult.query.filter_by(user_id=current_user.id).all()
-    realtime_results = RealtimeResult.query.filter_by(user_id=current_user.id).all()
-    return render_template("results.html", pcap_results=pcap_results, realtime_results=realtime_results)
+    # Query ChatContext records for PCAP and real-time analyses
+    pcap_contexts = ChatContext.query.filter_by(user_id=current_user.id, analysis_type="pcap").order_by(ChatContext.timestamp.desc()).all()
+    realtime_contexts = ChatContext.query.filter_by(user_id=current_user.id, analysis_type="real_time").order_by(ChatContext.timestamp.desc()).all()
+    return render_template("results.html", pcap_contexts=pcap_contexts, realtime_contexts=realtime_contexts)
+
 
 
 @app.route("/delete-realtime-result/<int:result_id>", methods=["POST"])

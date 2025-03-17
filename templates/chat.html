@@ -8,10 +8,10 @@
   {% if contexts %}
   <div class="mb-3">
     <label for="context_id" class="form-label text-white">Choose Analysis Context:</label>
-    <select id="context_id" name="context_id" class="form-select bg-dark text-white">
+    <select id="context_id" name="context_id" class="form-select bg-dark text-white" style="min-width: 600px;">
       {% for context in contexts %}
       <option value="{{ context.id }}" {% if current_context and context.id == current_context.id %}selected{% endif %}>
-        {{ context.file_path }} - {{ context.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+        {{ context.analysis_name if context.analysis_name else context.file_path }} - {{ context.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
       </option>
       {% endfor %}
     </select>
@@ -25,8 +25,8 @@
   <!-- Chat Box -->
   <div id="chat-box" class="border rounded p-3" style="height:400px; overflow-y: auto; background-color: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px);">
     {% for msg in messages %}
-      <div class="chat-message {{ msg.sender }}" style="text-align: {{ 'right' if msg.sender == 'user' else 'left' }};">
-        <span class="chat-label">{{ 'You:' if msg.sender == 'user' else 'Chatbot:' }}</span>{{ msg.message|safe }}
+      <div class="chat-message {{ msg.sender }}" style="text-align: {{ 'right' if msg.sender == 'user' else 'left' }};">  
+        <span class="chat-label">{{ current_user.username if msg.sender == 'user' else 'Chatbot:' }}</span>{{ msg.message|safe }}
       </div>
     {% endfor %}
   </div>
@@ -42,6 +42,11 @@
 <div class="text-center mt-4">
   <a href="{{ url_for('home') }}" class="btn btn-info" id="backToHomeBtn">Back to Home</a>
 </div>
+
+<!-- Define a JavaScript variable for the user's name -->
+<script>
+  var currentUserName = "{{ current_user.username }}";
+</script>
 
 <style>
   /* Chat bubble styles */
@@ -105,7 +110,7 @@ function appendMessage(sender, text) {
   const chatBox = document.getElementById("chat-box");
   const msgDiv = document.createElement("div");
   msgDiv.classList.add("chat-message", sender === "user" ? "user" : "bot");
-  msgDiv.innerHTML = `<span class="chat-label">${sender === "user" ? "You:" : "Chatbot:"}</span>${text}`;
+  msgDiv.innerHTML = `<span class="chat-label">${sender === "user" ? currentUserName + ':' : "Chatbot:"}</span>${text}`;
   msgDiv.style.textAlign = sender === "user" ? "right" : "left";
   chatBox.appendChild(msgDiv);
   chatBox.scrollTop = chatBox.scrollHeight;
