@@ -37,6 +37,19 @@ class ChatContext(db.Model):
     timestamp = db.Column(db.DateTime, default=db.func.now())
     user = db.relationship('User', backref='chat_contexts')
 
+# Novo modelo para armazenar mensagens do chat
+class ChatMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    context_id = db.Column(db.Integer, db.ForeignKey('chat_context.id'), nullable=False)
+    sender = db.Column(db.String(10), nullable=False)  # 'user' ou 'bot'
+    message = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relacionamentos para facilitar o acesso aos dados
+    user = db.relationship('User', backref='chat_messages', lazy=True)
+    context = db.relationship('ChatContext', backref='messages', lazy=True)
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), nullable=False, unique=True)

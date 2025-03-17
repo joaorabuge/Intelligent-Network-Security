@@ -10,7 +10,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from models import db, bcrypt, login_manager, User, PCAPResult, RealtimeResult, ChatContext
+from models import db, bcrypt, login_manager, User, PCAPResult, RealtimeResult, ChatContext, ChatMessage
 from config import Config
 from real_time_streaming import clean_previous_files, start_zeek_capture, process_zeek_logs, classify_traffic
 from real_time_streaming import get_active_interfaces
@@ -805,32 +805,67 @@ def delete_all_results():
 def chat():
     if request.method == "POST":
         user_message = request.form.get("message")
-        # You might pass a selected context (file_path) from a dropdown in your form.
-        # Here, if no context is selected, we'll use the latest context.
         context_id = request.form.get("context_id")
+        
+        # Retrieve the context record using the provided context_id or fallback to the latest context.
         if context_id:
             context_record = ChatContext.query.filter_by(id=context_id, user_id=current_user.id).first()
-            combined_file_path = context_record.file_path if context_record else None
         else:
-            # Use the latest context for this user if no context is explicitly chosen.
-            latest_context = ChatContext.query.filter_by(user_id=current_user.id).order_by(ChatContext.timestamp.desc()).first()
-            combined_file_path = latest_context.file_path if latest_context else None
+            context_record = ChatContext.query.filter_by(user_id=current_user.id).order_by(ChatContext.timestamp.desc()).first()
 
-        if not combined_file_path:
+        if not context_record:
             flash("No analysis context available. Run an analysis first.", "danger")
             return redirect(url_for("dashboard"))
 
+        # Save the user message in the database
+        new_user_msg = ChatMessage(
+            user_id=current_user.id,
+            context_id=context_record.id,
+            sender="user",
+            message=user_message
+        )
+        db.session.add(new_user_msg)
+        db.session.commit()
+
+        # Load context data for the chatbot
         try:
-            context_data = get_network_context_from_combined(combined_file_path)
+            context_data = get_network_context_from_combined(context_record.file_path)
         except Exception as e:
+            flash("Error loading network context.", "danger")
             return redirect(url_for("dashboard"))
-            
+        
         response_message = generate_chatbot_response(user_message, context=context_data)
+        
+        # Save the bot response in the database
+        new_bot_msg = ChatMessage(
+            user_id=current_user.id,
+            context_id=context_record.id,
+            sender="bot",
+            message=response_message
+        )
+        db.session.add(new_bot_msg)
+        db.session.commit()
+        
         return jsonify({"response": response_message})
     else:
-        # Pass the user's saved contexts to the template for selection.
+        # For GET: allow an optional query parameter to select a context (default to latest)
+        selected_context_id = request.args.get("context_id")
+        if selected_context_id:
+            current_context = ChatContext.query.filter_by(id=selected_context_id, user_id=current_user.id).first()
+        else:
+            current_context = ChatContext.query.filter_by(user_id=current_user.id).order_by(ChatContext.timestamp.desc()).first()
+        
+        if current_context:
+            chat_messages = ChatMessage.query.filter_by(
+                user_id=current_user.id,
+                context_id=current_context.id
+            ).order_by(ChatMessage.timestamp.asc()).all()
+        else:
+            chat_messages = []
+        
         user_contexts = ChatContext.query.filter_by(user_id=current_user.id).order_by(ChatContext.timestamp.desc()).all()
-        return render_template("chat.html", contexts=user_contexts)
+        return render_template("chat.html", contexts=user_contexts, messages=chat_messages, current_context=current_context)
+
 
     
 import json
