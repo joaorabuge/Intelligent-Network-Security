@@ -36,6 +36,7 @@
         </div>
     </div>
     {% endif %}
+  
 
     <!-- Buttons -->
     <div class="d-flex justify-content-center gap-3 mt-4">
@@ -43,7 +44,10 @@
         <form method="POST" action="{{ url_for('delete_realtime_result', result_id=result.id) }}" id="deleteRecordForm">
             <button type="submit" class="btn btn-danger px-4" id="deleteRecordBtn">Delete Record</button>
         </form>
-    </div>
+        <a href="{{ url_for('realtime_statistics', result_id=result.id) }}" class="btn btn-warning px-4" id="statisticsBtn">
+            Statistics
+        </a>
+    </div>    
 </div>
 
 <!-- JavaScript for Charts and Button Loading Behavior -->
@@ -99,29 +103,42 @@
             });
         }
         {% endif %}
+
+        // Button Loading Behavior for "Back to Results" (Anchor)
+        const backToResultsBtn = document.getElementById("backToResultsBtn");
+        if (backToResultsBtn) {
+            backToResultsBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                this.innerText = "Loading...";
+                this.classList.add("disabled");
+                setTimeout(() => {
+                    window.location.href = this.href;
+                }, 100);
+            });
+        }
+
+        // Button Loading Behavior for "Delete Record" (Form Submit)
+        const deleteRecordForm = document.getElementById("deleteRecordForm");
+        if (deleteRecordForm) {
+            deleteRecordForm.addEventListener("submit", function() {
+                const btn = document.getElementById("deleteRecordBtn");
+                btn.innerText = "Deleting...";
+                btn.disabled = true;
+            });
+        }
+
+        // Button Loading Behavior for "Statistics" (Anchor)
+        const statisticsBtn = document.getElementById("statisticsBtn");
+        if (statisticsBtn) {
+            statisticsBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                this.innerText = "Loading...";
+                this.classList.add("disabled");
+                setTimeout(() => {
+                    window.location.href = this.href;
+                }, 100);
+            });
+        }
     });
-
-    // Button Loading Behavior for "Back to Results" (Anchor)
-    const backToResultsBtn = document.getElementById("backToResultsBtn");
-    if (backToResultsBtn) {
-        backToResultsBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            this.innerText = "Loading...";
-            this.classList.add("disabled");
-            setTimeout(() => {
-                window.location.href = this.href;
-            }, 100);
-        });
-    }
-
-    // Button Loading Behavior for "Delete Record" (Form Submit)
-    const deleteRecordForm = document.getElementById("deleteRecordForm");
-    if (deleteRecordForm) {
-        deleteRecordForm.addEventListener("submit", function() {
-            const btn = document.getElementById("deleteRecordBtn");
-            btn.innerText = "Deleting...";
-            btn.disabled = true;
-        });
-    }
 </script>
 {% endblock %}

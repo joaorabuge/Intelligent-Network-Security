@@ -514,7 +514,11 @@ def realtime():
             # --- End New Code ---
 
             flash("Real-Time traffic analyzed successfully!", "success")
-            return render_template("realtime_results.html", results=results, graph_data=graph_data)
+            return render_template("realtime_results.html", 
+                                results=results, 
+                                graph_data=graph_data,
+                                result_id=new_result.id)
+
 
         except Exception as e:
             flash(f"Error during capture: {e}", "danger")
@@ -582,17 +586,17 @@ def process_pcap_file():
                 print("Error creating chat context:", e)
             # --- End New Code ---
 
-            return render_template("pcap_results.html", results=results, graph_data=graph_data)
+            flash("PCAP traffic analyzed successfully!", "success")
+            return render_template("pcap_results.html", 
+                                results=results, 
+                                graph_data=graph_data,
+                                result_id=new_result.id)
 
         except Exception as e:
             flash(f"Error processing PCAP file: {e}", "danger")
             return redirect(url_for("dashboard"))
     else:
         return redirect(url_for("dashboard"))
-
-
-
-
 
 
 
@@ -649,39 +653,64 @@ def evaluate_model():
     )
 
 
-
-
     
 @app.route("/realtime-result/<int:result_id>")
 @login_required
 def view_realtime_result(result_id):
-    """
-    Exibir detalhes de um resultado de captura em tempo real.
-    """
+    import os, json, pandas as pd
+    # 1) Retrieve the RealtimeResult object from the database
     result = RealtimeResult.query.filter_by(id=result_id, user_id=current_user.id).first_or_404()
 
-    # Recuperar os resultados salvos no banco
+    # 2) Generate graph data from the JSON result (which works correctly)
     try:
-        print("DEBUG - Raw Result:", result.result)  # Para verificar o conteúdo bruto
-        results = json.loads(result.result)  # Lista de pacotes
+        json_results = json.loads(result.result)  # List of packets from JSON
     except json.JSONDecodeError:
-        results = []
+        json_results = []
+    data_json = pd.DataFrame(json_results)
+    # Normalize label/type values for graph generation
+    data_json["label"] = data_json["label"].replace({
+        "benigno": "benign",
+        "maligno": "malign"
+    })
+    data_json["type"] = data_json["type"].replace({
+        "normal": "normal",
+        "Unknown Attack": "Unknown Attack"
+    })
+    graph_data = generate_graph_data_1(data_json)
 
-    # Criar um DataFrame a partir dos resultados
-    import pandas as pd
-    data = pd.DataFrame(results)
+    # 3) Retrieve the combined CSV for the detailed table from ChatContext
+    context = ChatContext.query.filter_by(
+        user_id=current_user.id,
+        analysis_type="real_time",
+        result_id=result_id
+    ).order_by(ChatContext.timestamp.desc()).first()
 
-    # Tradução dos valores de 'label' e 'type' para o esperado pelo `generate_graph_data`
-    data["label"] = data["label"].replace({"benigno": "benign", "maligno": "malign"})
-    data["type"] = data["type"].replace({"normal": "normal", "Unknown Attack": "Unknown Attack"})
+    if not context or not os.path.exists(context.file_path):
+        flash("Combined CSV not found for this result.", "danger")
+        return redirect(url_for("dashboard"))
 
-    print("DEBUG - DataFrame Pós-Tradução:", data)  # Para confirmar a tradução dos valores
+    data_csv = pd.read_csv(context.file_path)
 
-    # Gerar os dados do gráfico
-    graph_data = generate_graph_data_1(data)
-    print("DEBUG - Graph Data:", graph_data)  # Para validar os dados do gráfico
+    # 4) Prepare the detailed table columns
+    detail_columns = [
+        'src_ip', 'src_port', 'dst_ip', 'dst_port', 'proto', 'service',
+        'src_bytes', 'dst_bytes', 'conn_state', 'missed_bytes',
+        'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes'
+    ]
+    # Ensure all required columns exist; if missing, create them with a default value (None)
+    for col in detail_columns:
+        if col not in data_csv.columns:
+            data_csv[col] = None
 
-    return render_template("realtime_result_details.html", result=result, graph_data=graph_data)
+    detailed_stats = data_csv[detail_columns].head(10).to_dict(orient='records')
+
+    # 5) Render the template with both graph_data and detailed_stats
+    return render_template(
+        "realtime_result_details.html",
+        result=result,
+        graph_data=graph_data,
+        detailed_stats=detailed_stats
+    )
 
 
 @app.route("/pcap-result/<int:result_id>")
@@ -715,6 +744,113 @@ def view_pcap_result(result_id):
     print("DEBUG - Graph Data:", graph_data)  # Para validar os dados do gráfico
 
     return render_template("pcap_result_details.html", result=result, graph_data=graph_data)
+
+
+
+@app.route("/realtime-statistics/<int:result_id>")
+@login_required
+def realtime_statistics(result_id):
+    import os, pandas as pd, numpy as np
+    # Get the ChatContext to locate the combined CSV file
+    context = ChatContext.query.filter_by(
+        user_id=current_user.id,
+        analysis_type="real_time",
+        result_id=result_id
+    ).order_by(ChatContext.timestamp.desc()).first()
+
+    if not context or not os.path.exists(context.file_path):
+        flash("Combined CSV not found for this result.", "danger")
+        return redirect(url_for("dashboard"))
+
+    data = pd.read_csv(context.file_path)
+
+    # Define all the features you want to include in the statistics:
+    features_to_plot = [
+        'src_ip', 'src_port', 'dst_ip', 'dst_port', 'proto', 'service',
+        'src_bytes', 'dst_bytes', 'conn_state', 'missed_bytes',
+        'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes'
+    ]
+    
+    stats = {}
+    for feature in features_to_plot:
+        if feature in data.columns:
+            # If the feature is numeric, generate histogram data; otherwise, use frequency counts.
+            if np.issubdtype(data[feature].dtype, np.number):
+                # Compute histogram with 10 bins
+                counts, bin_edges = np.histogram(data[feature].dropna(), bins=10)
+                stats[feature] = {
+                    "type": "numeric",
+                    "counts": counts.tolist(),
+                    "bin_edges": bin_edges.tolist()
+                }
+            else:
+                # Compute frequency counts and take top 10 categories.
+                value_counts = data[feature].value_counts().head(10).to_dict()
+                stats[feature] = {
+                    "type": "categorical",
+                    "counts": value_counts
+                }
+        else:
+            stats[feature] = None
+
+    return render_template(
+        "realtime_statistics.html",
+        result_id=result_id,
+        stats=stats
+    )
+
+@app.route("/pcap-statistics/<int:result_id>")
+@login_required
+def pcap_statistics(result_id):
+    import os, pandas as pd, numpy as np
+    # Get the ChatContext for PCAP analyses
+    context = ChatContext.query.filter_by(
+        user_id=current_user.id,
+        analysis_type="pcap",
+        result_id=result_id
+    ).order_by(ChatContext.timestamp.desc()).first()
+
+    if not context or not os.path.exists(context.file_path):
+        flash("Combined CSV not found for this PCAP result.", "danger")
+        return redirect(url_for("dashboard"))
+
+    data = pd.read_csv(context.file_path)
+
+    # List the features you want to plot statistics for.
+    features_to_plot = [
+        'src_ip', 'src_port', 'dst_ip', 'dst_port', 'proto', 'service',
+        'src_bytes', 'dst_bytes', 'conn_state', 'missed_bytes',
+        'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes'
+    ]
+    
+    stats = {}
+    for feature in features_to_plot:
+        if feature in data.columns:
+            # For numeric features, generate histogram data; for others, use frequency counts.
+            if np.issubdtype(data[feature].dtype, np.number):
+                counts, bin_edges = np.histogram(data[feature].dropna(), bins=10)
+                stats[feature] = {
+                    "type": "numeric",
+                    "counts": counts.tolist(),
+                    "bin_edges": bin_edges.tolist()
+                }
+            else:
+                value_counts = data[feature].value_counts().head(10).to_dict()
+                stats[feature] = {
+                    "type": "categorical",
+                    "counts": value_counts
+                }
+        else:
+            stats[feature] = None
+
+    return render_template(
+        "pcap_statistics.html",
+        result_id=result_id,
+        stats=stats
+    )
+
+
+
 
 @app.route("/results")
 @login_required

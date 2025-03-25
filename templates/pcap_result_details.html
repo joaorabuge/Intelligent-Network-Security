@@ -41,6 +41,9 @@
         <form method="POST" action="{{ url_for('delete_pcap_result', result_id=result.id) }}" id="deleteRecordForm">
             <button type="submit" class="btn btn-danger px-4" id="deleteRecordBtn">Delete Record</button>
         </form>
+        <a href="{{ url_for('pcap_statistics', result_id=result.id) }}" class="btn btn-warning px-4" id="statisticsBtn">
+            Statistics
+        </a>
     </div>
 </div>
 
@@ -67,10 +70,8 @@
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false,  // Ensures the chart respects max-height
-                    plugins: {
-                        legend: { position: 'top' }
-                    }
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'top' } }
                 }
             });
         }
@@ -81,7 +82,6 @@
         if (attackCanvas) {
             const attackLabels = Object.keys({{ graph_data.attack_types | tojson }});
             const attackValues = Object.values({{ graph_data.attack_types | tojson }});
-
             new Chart(attackCanvas.getContext('2d'), {
                 type: 'bar',
                 data: {
@@ -93,30 +93,49 @@
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false,  // Prevents oversized charts
+                    maintainAspectRatio: false,
                     plugins: { legend: { display: false } },
                     scales: { y: { beginAtZero: true } }
                 }
             });
         }
         {% endif %}
-    });
 
-    // Botão "Back to Results" com comportamento Loading
-    document.getElementById("backToResultsBtn").addEventListener("click", function(e) {
-        e.preventDefault();
-        this.innerText = "Loading...";
-        this.classList.add("disabled");
-        setTimeout(() => {
-            window.location.href = this.href;
-        }, 100);
-    });
+        // Button Loading Behavior for "Back to Results"
+        const backToResultsBtn = document.getElementById("backToResultsBtn");
+        if (backToResultsBtn) {
+            backToResultsBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                this.innerText = "Loading...";
+                this.classList.add("disabled");
+                setTimeout(() => {
+                    window.location.href = this.href;
+                }, 100);
+            });
+        }
 
-    // Botão "Delete Record" com comportamento "Deleting..."
-    document.getElementById("deleteRecordForm").addEventListener("submit", function() {
-        const btn = document.getElementById("deleteRecordBtn");
-        btn.innerText = "Deleting...";
-        btn.disabled = true;
+        // Button Loading Behavior for "Delete Record"
+        const deleteRecordForm = document.getElementById("deleteRecordForm");
+        if (deleteRecordForm) {
+            deleteRecordForm.addEventListener("submit", function() {
+                const btn = document.getElementById("deleteRecordBtn");
+                btn.innerText = "Deleting...";
+                btn.disabled = true;
+            });
+        }
+
+        // Button Loading Behavior for "Statistics"
+        const statisticsBtn = document.getElementById("statisticsBtn");
+        if (statisticsBtn) {
+            statisticsBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                this.innerText = "Loading...";
+                this.classList.add("disabled");
+                setTimeout(() => {
+                    window.location.href = this.href;
+                }, 100);
+            });
+        }
     });
 </script>
 {% endblock %}

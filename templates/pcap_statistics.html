@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2 class="text-center mb-4 text-white">Real-Time Statistics (Analysis ID: {{ result_id }})</h2>
+    <div class="text-center mb-4">
+        <a href="{{ url_for('view_pcap_result', result_id=result_id) }}" class="btn btn-secondary" id="backToAnalysisBtn">
+            Back to Analysis
+        </a>
+    </div>
+    
+    {% for feature, info in stats.items() %}
+      {% if info %}
+      <div class="card bg-dark text-light mb-4 shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title text-center">{{ feature|capitalize }} Distribution</h5>
+          <canvas id="chart_{{ feature }}" style="max-height: 400px;"></canvas>
+        </div>
+      </div>
+      {% endif %}
+    {% endfor %}
+
+    <!-- Back to Dashboard Button at the End -->
+    <div class="text-center mb-4">
+        <a href="{{ url_for('dashboard') }}" class="btn btn-info px-4" id="backToDashboardBtn">
+            Back to Dashboard
+        </a>
+    </div>
+</div>
+
+<!-- Include Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const statsData = {{ stats|tojson }};
+    
+    Object.keys(statsData).forEach(feature => {
+        const info = statsData[feature];
+        if (!info) return;
+        const ctx = document.getElementById(`chart_${feature}`).getContext('2d');
+        
+        if (info.type === "categorical") {
+            // For categorical data, plot a pie chart
+            const labels = Object.keys(info.counts);
+            const values = Object.values(info.counts);
+            const backgroundColors = labels.map(() => {
+                const r = Math.floor(Math.random() * 255);
+                const g = Math.floor(Math.random() * 255);
+                const b = Math.floor(Math.random() * 255);
+                return `rgba(${r}, ${g}, ${b}, 0.6)`;
+            });
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: backgroundColors
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'top' } }
+                }
+            });
+        } else if (info.type === "numeric") {
+            // For numeric data, plot a bar chart using histogram data
+            const binEdges = info.bin_edges;
+            const counts = info.counts;
+            // Create labels for each bin
+            const labels = [];
+            for (let i = 0; i < binEdges.length - 1; i++) {
+                labels.push(`${binEdges[i].toFixed(1)} - ${binEdges[i+1].toFixed(1)}`);
+            }
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: feature,
+                        data: counts,
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+    });
+
+    // Button Loading Behavior for "Back to Analysis"
+    const backToAnalysisBtn = document.getElementById("backToAnalysisBtn");
+    if (backToAnalysisBtn) {
+        backToAnalysisBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            this.innerText = "Loading...";
+            this.classList.add("disabled");
+            setTimeout(() => {
+                window.location.href = this.href;
+            }, 100);
+        });
+    }
+    
+    // Button Loading Behavior for "Back to Dashboard"
+    const backToDashboardBtn = document.getElementById("backToDashboardBtn");
+    if (backToDashboardBtn) {
+        backToDashboardBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            this.innerText = "Loading...";
+            this.classList.add("disabled");
+            setTimeout(() => {
+                window.location.href = this.href;
+            }, 100);
+        });
+    }
+});
+</script>
+{% endblock %}
