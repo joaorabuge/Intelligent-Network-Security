@@ -49,8 +49,11 @@
     {% endif %}
 
     <!-- Back Button -->
-    <div class="text-center">
+    <div class="d-flex justify-content-center gap-3 mt-4">
         <a href="{{ url_for('dashboard') }}" class="btn btn-info">Back to Dashboard</a>
+        <a href="{{ url_for('realtime_statistics', result_id=result_id) }}" class="btn btn-warning px-4" id="statisticsBtn">
+            Statistics
+        </a>        
     </div>
 </div>
 
@@ -119,6 +122,18 @@
                 window.location.href = this.href;
             }, 100);
         });
+        // Button Loading Behavior for "Statistics" (Anchor)
+        const statisticsBtn = document.getElementById("statisticsBtn");
+        if (statisticsBtn) {
+            statisticsBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                this.innerText = "Loading...";
+                this.classList.add("disabled");
+                setTimeout(() => {
+                    window.location.href = this.href;
+                }, 100);
+            });
+        }
     });
 </script>
 {% endblock %}

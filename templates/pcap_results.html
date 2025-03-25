@@ -5,13 +5,16 @@
     <h2 class="text-center mb-4">PCAP Analysis Results</h2>
 
     <!-- Display flash messages -->
+    <!-- Exibindo mensagem de erro ou sucesso -->
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-            {% for category, message in messages %}
-                <div class="alert alert-{{ category }} text-center" role="alert">
-                    {{ message }}
-                </div>
-            {% endfor %}
+            <ul class="list-unstyled">
+                {% for category, message in messages %}
+                    <li class="alert alert-{{ category }}">
+                        {{ message }}
+                    </li>
+                {% endfor %}
+            </ul>
         {% endif %}
     {% endwith %}
 
@@ -46,14 +49,18 @@
     {% endif %}
 
     <!-- Back Button -->
-    <div class="text-center">
-        <a href="{{ url_for('dashboard') }}" class="btn btn-info" id="backToDashboardBtn">Back to Dashboard</a>
+    <div class="d-flex justify-content-center gap-3 mt-4">
+        <a href="{{ url_for('dashboard') }}" class="btn btn-info">Back to Dashboard</a>
+        <a href="{{ url_for('pcap_statistics', result_id=result_id) }}" class="btn btn-warning px-4" id="statisticsBtn">
+            Statistics
+        </a>    
     </div>
 </div>
 
+<!-- Scripts for Charts -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    // Traffic Distribution Chart
+    // Traffic distribution chart
     const trafficCtx = document.getElementById('trafficChart').getContext('2d');
     new Chart(trafficCtx, {
         type: 'pie',
@@ -66,11 +73,13 @@
         },
         options: {
             responsive: true,
-            plugins: { legend: { position: 'top' }}
+            plugins: {
+                legend: { position: 'top' }
+            }
         }
     });
 
-    // Attack Types Chart
+    // Attack types chart (only if there are attacks)
     {% if graph_data.attack_types %}
     const attackCtx = document.getElementById('attackChart').getContext('2d');
     const attackLabels = Object.keys({{ graph_data.attack_types | tojson }});
@@ -95,23 +104,36 @@
     });
     {% endif %}
 
-    // Handle flash message transitions without a timer
+    // Exibe os alertas com fade-in
     window.addEventListener('DOMContentLoaded', (event) => {
-      let alerts = document.querySelectorAll('.alert');
-      alerts.forEach((alert) => {
-        // Add the 'show' class to trigger the fade-in transition
-        alert.classList.add('show');
-      });
+        let alerts = document.querySelectorAll('.alert');
+        alerts.forEach((alert) => {
+            alert.classList.add('show');
+        });
     });
 
-    // Adiciona comportamento "Loading..." ao clicar no botão "Back to Dashboard"
-    document.getElementById("backToDashboardBtn").addEventListener("click", function(e) {
-        e.preventDefault();
-        this.innerText = "Loading...";
-        this.classList.add("disabled");
-        setTimeout(() => {
-            window.location.href = this.href;
-        }, 100);
+    // Adiciona comportamento "Loading..." aos botões (links) da página
+    document.querySelectorAll('a.btn').forEach(anchor => {
+        anchor.addEventListener('click', function(e) {
+            e.preventDefault();
+            this.innerText = "Loading...";
+            this.classList.add("disabled");
+            setTimeout(() => {
+                window.location.href = this.href;
+            }, 100);
+        });
+        // Button Loading Behavior for "Statistics" (Anchor)
+        const statisticsBtn = document.getElementById("statisticsBtn");
+        if (statisticsBtn) {
+            statisticsBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                this.innerText = "Loading...";
+                this.classList.add("disabled");
+                setTimeout(() => {
+                    window.location.href = this.href;
+                }, 100);
+            });
+        }
     });
 </script>
 {% endblock %}
