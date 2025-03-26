@@ -68,6 +68,17 @@
           <a href="{{ url_for('results') }}" class="btn btn-info mt-3">Manage Results</a>
       </div>
   </div>
+<!-- In dashboard.html, add this card alongside your other options -->
+<div class="col-md-3">
+  <div class="card feature-card text-center shadow-sm p-4">
+    <div class="feature-icon mb-3">
+      <i class="fa-solid fa-eye"></i>
+    </div>
+    <h5><strong>Monitor 24/7</strong></h5>
+    <p>Continuously monitor network traffic and get alerted on malign events.</p>
+    <a href="{{ url_for('monitor') }}" class="btn btn-info mt-3">Start Monitoring</a>
+  </div>
+</div>
 
 </div>
 

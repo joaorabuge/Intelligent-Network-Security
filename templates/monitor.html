@@ -1,0 +1,58 @@
+<!-- templates/monitor.html -->
+{% extends "base.html" %}
+{% block content %}
+<div class="card mt-4">
+  <div class="card-body">
+    <h5 class="card-title">Real-Time Traffic Analysis</h5>
+
+    {% if active_monitoring %}
+      <p class="text-success">Monitoring is currently active.</p>
+      <!-- Wrap both buttons in a flex container to space them nicely -->
+      <div class="d-flex flex-row gap-3 align-items-center">
+        <!-- "Stop Monitoring" is a form submission -->
+        <form method="POST" action="{{ url_for('monitor') }}">
+          <button type="submit" name="action" value="stop" class="btn btn-danger">
+            Stop Monitoring
+          </button>
+        </form>
+
+        <!-- "Monitor Dashboard" is just a link -->
+        <a href="{{ url_for('monitor_dashboard') }}" class="btn btn-info">
+          Monitor Dashboard
+        </a>
+      </div>
+
+    {% else %}
+      <form method="POST" action="{{ url_for('monitor') }}">
+        <div class="mb-3">
+          <label for="admin_password" class="form-label">Administrator Password</label>
+          <input type="password" class="form-control" id="admin_password" name="admin_password" required>
+        </div>
+        <div class="mb-3">
+          <label for="interface" class="form-label">Network Interface</label>
+          <select class="form-select" id="interface" name="interface" required>
+            {% for iface in active_interfaces %}
+              <option value="{{ iface }}">{{ iface }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="text-center mt-4">
+          <button type="submit" name="action" value="start" class="btn btn-success">
+            Start Monitoring
+          </button>
+          <a href="{{ url_for('monitor_dashboard') }}" class="btn btn-info ms-3">
+            Monitor Dashboard
+          </a>
+        </div>
+      </form>
+    {% endif %}
+
+  </div>
+</div>
+
+<div class="text-center mt-4">
+  <a href="{{ url_for('dashboard') }}" class="btn btn-info" id="backToDashboardBtn">
+    Back to Dashboard
+  </a>
+</div>
+{% endblock %}

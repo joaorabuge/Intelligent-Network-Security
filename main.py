@@ -10,7 +10,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from models import db, bcrypt, login_manager, User, PCAPResult, RealtimeResult, ChatContext, ChatMessage
+from models import db, bcrypt, login_manager, User, PCAPResult, RealtimeResult, ChatContext, ChatMessage, MonitorResult
 from config import Config
 from real_time_streaming import clean_previous_files, start_zeek_capture, process_zeek_logs, classify_traffic
 from real_time_streaming import get_active_interfaces
@@ -29,6 +29,9 @@ import pytz
 import threading
 import webbrowser
 
+# Global dictionaries to track monitoring threads and stop events per user
+monitor_threads = {}
+monitor_stop_events = {}
 
 
 # Caminhos principais
@@ -373,6 +376,104 @@ def get_network_context_from_combined(csv_path="real-time/combined_data.csv"):
     except Exception as e:
         return {"error": str(e)}
 
+def global_monitor_daemon():
+    """
+    A single background thread that runs forever.
+    Every X seconds, it checks which users have monitoring_on=True
+    and performs a capture for each one.
+    """
+    with app.app_context():
+        while True:
+            # Force session to refresh data from the database
+            db.session.expire_all()
+            users_to_monitor = User.query.filter_by(monitoring_on=True).all()
+            for user in users_to_monitor:
+                try:
+                    print(f"[GlobalMonitor] Monitoring user {user.id} on interface {user.monitoring_interface}...")
+                    clean_previous_files()
+                    # For testing, 10-second capture; adjust duration as needed.
+                    start_zeek_capture(
+                        interface=user.monitoring_interface, 
+                        duration=10, 
+                        password=user.monitoring_password
+                    )
+                    data = process_zeek_logs()
+                    results, _ = classify_traffic(data)
+
+                    # Count malign traffic
+                    if isinstance(results, list):
+                        malign_count = sum(1 for pkt in results if pkt.get("label", "").lower() == "malign")
+                    else:
+                        malign_count = results.get("malign_count", 0)
+
+                    record = {
+                        "results": results,
+                        "malign_count": malign_count,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                    monitor_result = MonitorResult(
+                        result=json.dumps(record),
+                        user_id=user.id
+                    )
+                    db.session.add(monitor_result)
+                    db.session.commit()
+                    
+                    if malign_count > 0:
+                        print("[GlobalMonitor] Malign traffic detected!")
+                    else:
+                        print("[GlobalMonitor] No malign traffic detected for user", user.id)
+                except Exception as e:
+                    print(f"[GlobalMonitor] Error monitoring user {user.id}: {e}")
+
+            # Sleep X seconds before next cycle (adjust as needed)
+            time.sleep(10)
+
+# --- Updated Monitoring Function ---
+def monitor_traffic(user_id, interface, admin_password, stop_event):
+    with app.app_context():
+        while not stop_event.is_set():
+            try:
+                print(f"[Monitoring] Starting capture on interface {interface} for user {user_id}...")
+                clean_previous_files()
+                # For testing, duration is 10 seconds; adjust as needed.
+                start_zeek_capture(interface=interface, duration=10, password=admin_password)
+                
+                print("[Monitoring] Processing Zeek logs...")
+                data = process_zeek_logs()
+                
+                print("[Monitoring] Classifying traffic...")
+                results, _ = classify_traffic(data)
+                
+                # Count malign traffic regardless of the result type
+                if isinstance(results, list):
+                    malign_count = sum(1 for pkt in results if pkt.get("label", "").lower() == "malign")
+                else:
+                    malign_count = results.get("malign_count", 0)
+                
+                # Always save the monitoring results with a field indicating if malign traffic was detected.
+                record = {
+                    "results": results,
+                    "malign_count": malign_count,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                monitor_result = MonitorResult(
+                    result=json.dumps(record),
+                    user_id=user_id
+                )
+                db.session.add(monitor_result)
+                db.session.commit()
+                
+                if malign_count > 0:
+                    print("[Monitoring] Malign traffic detected!")
+                else:
+                    print("[Monitoring] No malign traffic detected this interval.")
+                    
+            except Exception as e:
+                print(f"[Monitoring] Error: {e}")
+            
+            time.sleep(10)
+        print(f"[Monitoring] Stop signal received. Monitoring for user {user_id} is stopping.")
+
 
 
 
@@ -443,8 +544,14 @@ def login():
 
 @app.route("/logout")
 def logout():
+    if current_user.is_authenticated:
+        current_user.monitoring_on = False
+        current_user.monitoring_interface = None
+        current_user.monitoring_password = None
+        db.session.commit()
     logout_user()
-    return redirect(url_for("home"))  # Redirect after logout
+    return redirect(url_for("home"))
+
 
 
 
@@ -1173,9 +1280,192 @@ def download_report():
 
     return send_file(pdf_path, as_attachment=True)
 
+@app.route("/monitor", methods=["GET", "POST"])
+@login_required
+def monitor():
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "start":
+            interface = request.form.get("interface")
+            admin_password = request.form.get("admin_password")
+
+            current_user.monitoring_on = True
+            current_user.monitoring_interface = interface
+            current_user.monitoring_password = admin_password
+            db.session.commit()
+
+            flash("24/7 monitoring started successfully! (global daemon is now monitoring you.)", "success")
+        
+        elif action == "stop":
+            current_user.monitoring_on = False
+            current_user.monitoring_interface = None
+            current_user.monitoring_password = None
+            db.session.commit()
+
+            flash("Monitoring stopped.", "success")
+
+        return redirect(url_for("monitor"))
+    
+    # GET: Show current status
+    active_monitoring = current_user.monitoring_on
+    active_interfaces = get_active_interfaces()
+    return render_template("monitor.html", 
+                           active_interfaces=active_interfaces, 
+                           active_monitoring=active_monitoring)
+
+
+
+@app.route("/stop_monitor", methods=["POST"])
+@login_required
+def stop_monitor():
+    user_id = current_user.id
+    # Check if a monitoring thread is running for this user.
+    if user_id in monitoring_stop_events:
+        monitoring_stop_events[user_id].set()  # Signal the thread to stop.
+        # Optionally, join the thread (with a timeout) if you want to wait for it to finish.
+        thread = monitoring_threads.get(user_id)
+        if thread is not None:
+            thread.join(timeout=5)
+        # Remove the thread and event from our dictionaries.
+        monitoring_stop_events.pop(user_id, None)
+        monitoring_threads.pop(user_id, None)
+        flash("Monitoring stopped successfully.", "success")
+    else:
+        flash("No active monitoring found.", "info")
+    return redirect(url_for("monitor"))
+
+@app.route("/monitor-dashboard", methods=["GET"])
+@login_required
+def monitor_dashboard():
+    # Retrieve all monitoring records in chronological order
+    records = MonitorResult.query.filter_by(user_id=current_user.id).order_by(MonitorResult.timestamp.asc()).all()
+    timestamps = []
+    malign_counts = []
+
+    for rec in records:
+        try:
+            data = json.loads(rec.result)
+            timestamps.append(rec.timestamp.strftime("%Y-%m-%d %H:%M:%S"))
+            malign_counts.append(data.get("malign_count", 0))
+        except Exception as e:
+            print(f"Error parsing record {rec.id}: {e}")
+            continue
+
+    # Instead of "total_intervals", compute how long monitoring has been active
+    time_monitored_str = "N/A"
+    if records:
+        first_timestamp = records[0].timestamp  # earliest record
+        now = datetime.utcnow()
+        diff = now - first_timestamp  # a timedelta
+
+        # Convert that timedelta to hours/minutes or days/hours, etc.
+        days = diff.days
+        seconds = diff.seconds
+        hours = days * 24 + seconds // 3600
+        minutes = (seconds % 3600) // 60
+        # Format a string (e.g. "2h 15m" or "1d 3h 20m", etc.)
+        if days > 0:
+            # e.g. "1d 2h 15m"
+            time_monitored_str = f"{days}d {hours % 24}h {minutes}m"
+        else:
+            # e.g. "2h 15m"
+            time_monitored_str = f"{hours}h {minutes}m"
+
+    total_malign = sum(malign_counts)
+    avg_malign = total_malign / len(records) if records else 0
+
+    summary_stats = {
+        "time_monitored": time_monitored_str,
+        "total_malign": total_malign,
+        "average_malign": round(avg_malign, 2)
+    }
+
+    return render_template("monitor_dashboard.html", 
+                           timestamps=timestamps, 
+                           malign_counts=malign_counts, 
+                           summary_stats=summary_stats,
+                           monitor_results=records)
+
+
+
+@app.route("/monitor-statistics", methods=["GET"])
+@login_required
+def monitor_statistics():
+    import pandas as pd
+    import numpy as np
+
+    # Retrieve monitor results for the current user
+    records = MonitorResult.query.filter_by(user_id=current_user.id).order_by(MonitorResult.timestamp.asc()).all()
+    combined_packets = []
+    for rec in records:
+        try:
+            data = json.loads(rec.result)
+            packets = data.get("results")
+            if isinstance(packets, list):
+                combined_packets.extend(packets)
+        except Exception as e:
+            print(f"Error parsing monitor record {rec.id}: {e}")
+            continue
+
+    if not combined_packets:
+        flash("No monitoring data available yet.", "info")
+        return render_template("monitor_statistics.html", stats={})
+
+    df = pd.DataFrame(combined_packets)
+
+    # List of features you want to display
+    features_to_plot = [
+        'src_ip', 'src_port', 'dst_ip', 'dst_port', 'proto', 'service',
+        'src_bytes', 'dst_bytes', 'conn_state', 'missed_bytes',
+        'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes'
+    ]
+    
+    # --- Force numeric conversion for known numeric columns ---
+    numeric_candidates = [
+        'src_port', 'dst_port', 'proto', 'service', 'src_bytes', 'dst_bytes',
+        'conn_state', 'missed_bytes', 'src_pkts', 'src_ip_bytes',
+        'dst_pkts', 'dst_ip_bytes'
+    ]
+    for col in numeric_candidates:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # Now compute the histogram/frequency data
+    stats = {}
+    for feature in features_to_plot:
+        if feature not in df.columns:
+            stats[feature] = None
+            continue
+        
+        # Check if the feature is numeric now
+        if np.issubdtype(df[feature].dtype, np.number):
+            # Numeric => histogram
+            counts, bin_edges = np.histogram(df[feature].dropna(), bins=10)
+            stats[feature] = {
+                "type": "numeric",
+                "counts": counts.tolist(),
+                "bin_edges": bin_edges.tolist()
+            }
+        else:
+            # Categorical => top 10 frequency
+            value_counts = df[feature].value_counts().head(10).to_dict()
+            stats[feature] = {
+                "type": "categorical",
+                "counts": value_counts
+            }
+
+    return render_template("monitor_statistics.html", stats=stats)
+
+
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    threading.Timer(1, open_browser).start()
-    app.run(debug=False)
+    
+    # Start the global monitoring thread
+    daemon_thread = threading.Thread(target=global_monitor_daemon, daemon=True)
+    daemon_thread.start()
+
+    threading.Timer(1, lambda: webbrowser.open_new("http://127.0.0.1:5000")).start()
+    app.run(debug=True)
+
 
