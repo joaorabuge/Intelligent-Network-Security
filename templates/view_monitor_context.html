@@ -1,19 +1,27 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container mt-4">
-  <h2 class="text-center mb-4 text-white">Monitor Statistics</h2>
+  <h2 class="text-center mb-4">Monitoring Context Details</h2>
 
-  <!-- Overall Traffic Distribution Card -->
-  <div class="card bg-dark text-light mb-4 shadow-sm">
+  <div class="card mb-4 shadow-sm">
+    <div class="card-body">
+      <h5 class="card-title">Context Information</h5>
+      <p><strong>Context Name:</strong> {{ context.analysis_name }}</p>
+      <p><strong>Timestamp:</strong> {{ context.timestamp }}</p>
+    </div>
+  </div>
+
+  <!-- Benign vs. Malign Pie Chart -->
+  <div class="card mb-4 shadow-sm">
     <div class="card-body text-center">
-      <h5 class="card-title">Benign vs. Malicious</h5>
+      <h5 class="card-title">Benign vs. Malicious Traffic</h5>
       <canvas id="trafficChart" style="max-height: 300px;"></canvas>
     </div>
   </div>
 
-  <!-- Only show "Attack Types" chart if there's at least one malicious packet -->
+  <!-- Attack Types Bar Chart (only if available) -->
   {% if graph_data.attack_types and graph_data.attack_types|length > 0 %}
-  <div class="card bg-dark text-light mb-4 shadow-sm">
+  <div class="card mb-4 shadow-sm">
     <div class="card-body text-center">
       <h5 class="card-title">Attack Types</h5>
       <canvas id="attackChart" style="max-height: 300px;"></canvas>
@@ -21,12 +29,11 @@
   </div>
   {% endif %}
 
-  <h4 class="mt-4 text-white">Feature Statistics</h4>
-
-  <!-- Loop over each feature in 'stats' and generate a chart -->
+  <!-- Feature Statistics Charts -->
+  <h4 class="mt-4">Feature Statistics</h4>
   {% for feature, info in stats.items() %}
     {% if info %}
-    <div class="card bg-dark text-light mb-4 shadow-sm">
+    <div class="card mb-4 shadow-sm">
       <div class="card-body">
         <h5 class="card-title text-center">{{ feature|capitalize }} Distribution</h5>
         <canvas id="chart_{{ feature }}" style="max-height: 300px;"></canvas>
@@ -35,11 +42,8 @@
     {% endif %}
   {% endfor %}
 
-  <!-- Back to Dashboard Button -->
   <div class="text-center mt-4">
-    <a href="{{ url_for('dashboard') }}" class="btn btn-info" id="backToDashboardBtn">
-      Back to Dashboard
-    </a>
+    <a href="{{ url_for('results') }}" class="btn btn-info">Back to Results</a>
   </div>
 </div>
 
@@ -47,7 +51,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    // 1) Traffic Distribution (Benign vs Malicious)
+    // Traffic Distribution Pie Chart
     const benignCount = {{ graph_data.benign_count }};
     const malignCount = {{ graph_data.malign_count }};
     const trafficCtx = document.getElementById("trafficChart").getContext("2d");
@@ -62,13 +66,11 @@ document.addEventListener("DOMContentLoaded", function() {
       },
       options: {
         responsive: true,
-        plugins: {
-          legend: { position: 'top' }
-        }
+        plugins: { legend: { position: 'top' } }
       }
     });
 
-    // 2) Attack Types (only if malicious packets exist)
+    // Attack Types Bar Chart (if exists)
     {% if graph_data.attack_types %}
     const attackTypesData = {{ graph_data.attack_types|tojson }};
     const attackTypesKeys = Object.keys(attackTypesData);
@@ -85,37 +87,27 @@ document.addEventListener("DOMContentLoaded", function() {
         },
         options: {
           responsive: true,
-          scales: {
-            y: { beginAtZero: true }
-          }
+          scales: { y: { beginAtZero: true } }
         }
       });
     }
     {% endif %}
 
-    // 3) Feature-by-feature charts
+    // Feature Statistics Charts
     const statsData = {{ stats|tojson }};
     for (const [feature, info] of Object.entries(statsData)) {
-      if (!info) continue;  // skip if null
-
+      if (!info) continue;
       const ctx = document.getElementById("chart_" + feature);
       if (!ctx) continue;
-
       const chartCtx = ctx.getContext("2d");
 
       if (info.type === "numeric") {
-        // Numeric => histogram data
         const binEdges = info.bin_edges;
         const counts = info.counts;
-
-        // Create bin labels
         let labels = [];
         for (let i = 0; i < binEdges.length - 1; i++) {
-          const rangeStart = binEdges[i].toFixed(1);
-          const rangeEnd = binEdges[i+1].toFixed(1);
-          labels.push(`${rangeStart} - ${rangeEnd}`);
+          labels.push(`${parseFloat(binEdges[i]).toFixed(1)} - ${parseFloat(binEdges[i+1]).toFixed(1)}`);
         }
-
         new Chart(chartCtx, {
           type: 'bar',
           data: {
@@ -128,28 +120,19 @@ document.addEventListener("DOMContentLoaded", function() {
           },
           options: {
             responsive: true,
-            scales: {
-              y: { beginAtZero: true }
-            },
-            plugins: {
-              legend: { display: false }
-            }
+            scales: { y: { beginAtZero: true } },
+            plugins: { legend: { display: false } }
           }
         });
-
       } else if (info.type === "categorical") {
-        // Categorical => frequency distribution
         const labels = Object.keys(info.counts);
         const values = Object.values(info.counts);
-
-        // Generate random colors for each category slice
         const backgroundColors = labels.map(() => {
           const r = Math.floor(Math.random() * 255);
           const g = Math.floor(Math.random() * 255);
           const b = Math.floor(Math.random() * 255);
           return `rgba(${r}, ${g}, ${b}, 0.6)`;
         });
-
         new Chart(chartCtx, {
           type: 'pie',
           data: {
@@ -161,25 +144,10 @@ document.addEventListener("DOMContentLoaded", function() {
           },
           options: {
             responsive: true,
-            plugins: {
-              legend: { position: 'top' }
-            }
+            plugins: { legend: { position: 'top' } }
           }
         });
       }
-    }
-
-    // Optional: add "loading" button behavior
-    const backBtn = document.getElementById("backToDashboardBtn");
-    if (backBtn) {
-      backBtn.addEventListener("click", function(e) {
-        e.preventDefault();
-        this.innerText = "Loading...";
-        this.classList.add("disabled");
-        setTimeout(() => {
-          window.location.href = this.href;
-        }, 200);
-      });
     }
 });
 </script>
