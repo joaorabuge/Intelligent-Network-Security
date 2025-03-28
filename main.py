@@ -1494,10 +1494,11 @@ def monitor_statistics():
 
     # 3) Force numeric conversion if needed, like you do for real-time:
     numeric_candidates = [
-        'src_port', 'dst_port', 'proto', 'service',
-        'src_bytes', 'dst_bytes', 'conn_state', 'missed_bytes',
+        'src_port', 'dst_port',
+        'src_bytes', 'dst_bytes', 'missed_bytes',
         'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes'
     ]
+
     for col in numeric_candidates:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -1612,9 +1613,12 @@ def view_monitor_context(context_id):
     df = pd.read_csv(full_path)
     
     # Force numeric conversion on known numeric columns
-    numeric_candidates = ['src_port', 'dst_port', 'proto', 'service',
-                          'src_bytes', 'dst_bytes', 'conn_state', 'missed_bytes',
-                          'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes']
+    numeric_candidates = [
+        'src_port', 'dst_port',
+        'src_bytes', 'dst_bytes', 'missed_bytes',
+        'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes'
+    ]
+
     for col in numeric_candidates:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
