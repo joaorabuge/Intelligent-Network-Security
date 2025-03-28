@@ -1,11 +1,11 @@
-<!-- templates/monitor_dashboard.html -->
+<!-- monitor_dashboard.html -->
 {% extends "base.html" %}
 {% block content %}
 <div class="container mt-4">
   <h2 class="text-center mb-4">Monitor Dashboard</h2>
   
-  <!-- Summary Statistics Cards -->
   <div class="row mb-4">
+    <!-- Time Monitored -->
     <div class="col-md-4">
       <div class="card bg-dark text-light shadow-sm">
         <div class="card-body text-center">
@@ -14,6 +14,8 @@
         </div>
       </div>
     </div>
+
+    <!-- Total Malign Packets -->
     <div class="col-md-4">
       <div class="card bg-dark text-light shadow-sm">
         <div class="card-body text-center">
@@ -22,49 +24,49 @@
         </div>
       </div>
     </div>
+
+    <!-- Average Malign per Hour -->
     <div class="col-md-4">
       <div class="card bg-dark text-light shadow-sm">
         <div class="card-body text-center">
-          <h5>Average Malign per Interval</h5>
-          <p class="display-4">{{ summary_stats.average_malign }}</p>
+          <h5>Average Malign per Hour</h5>
+          <p class="display-4">{{ summary_stats.average_malign_per_hour }}</p>
         </div>
       </div>
     </div>
   </div>
   
-  <!-- Chart Display -->
+  <!-- Card for the new line chart of total traffic over time -->
   <div class="card bg-dark text-light mb-4 shadow-sm">
     <div class="card-body">
-      <h5 class="card-title text-center">Malign Traffic Over Time</h5>
-      <canvas id="malignChart" style="max-height:400px;"></canvas>
+      <h5 class="card-title text-center">Total Traffic Over Time</h5>
+      <canvas id="trafficChart" style="max-height:400px;"></canvas>
     </div>
   </div>
-  
+
   <div class="d-flex justify-content-center gap-3 mb-4">
     <a href="{{ url_for('monitor') }}" class="btn btn-secondary">Back to Monitoring Controls</a>
     <a href="{{ url_for('monitor_statistics') }}" class="btn btn-info">View Detailed Statistics</a>
   </div>
-
 </div>
 
-<!-- Include Chart.js from CDN -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  // Auto-refresh every 30 seconds
+  // Optional: auto-refresh
   setInterval(function() {
     window.location.reload();
   }, 30000);
 
-  const ctx = document.getElementById('malignChart').getContext('2d');
-  const malignChart = new Chart(ctx, {
+  const ctx = document.getElementById('trafficChart').getContext('2d');
+  const trafficChart = new Chart(ctx, {
       type: 'line',
       data: {
           labels: {{ timestamps|tojson }},
           datasets: [{
-              label: 'Malign Count',
-              data: {{ malign_counts|tojson }},
-              borderColor: 'rgba(255,99,132,1)',
-              backgroundColor: 'rgba(255,99,132,0.2)',
+              label: 'Total Traffic (Packets)',
+              data: {{ traffic_counts|tojson }},
+              borderColor: 'rgba(54, 162, 235, 1)',
+              backgroundColor: 'rgba(54, 162, 235, 0.2)',
               fill: true,
               tension: 0.2
           }]
@@ -82,7 +84,7 @@
               },
               y: { 
                   display: true, 
-                  title: { display: true, text: 'Malign Count' }, 
+                  title: { display: true, text: 'Packets Captured' }, 
                   beginAtZero: true 
               }
           }

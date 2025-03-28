@@ -1420,53 +1420,77 @@ def monitor():
 @login_required
 def monitor_dashboard():
     # Retrieve all monitoring records in chronological order
-    records = MonitorResult.query.filter_by(user_id=current_user.id).order_by(MonitorResult.timestamp.asc()).all()
+    records = MonitorResult.query.filter_by(
+        user_id=current_user.id
+    ).order_by(MonitorResult.timestamp.asc()).all()
+
+    # If no records, just return empty stats
+    if not records:
+        summary_stats = {
+            "time_monitored": "00:00:00",
+            "total_malign": 0,
+            "average_malign_per_hour": 0
+        }
+        return render_template(
+            "monitor_dashboard.html",
+            timestamps=[],
+            traffic_counts=[],
+            summary_stats=summary_stats,
+            monitor_results=[]
+        )
+
+    num_records = len(records)
+
+    # --- 1) TIME MONITORED (string) ---
+    # Each record is 20s. total_seconds = num_records * 20
+    total_seconds = num_records * 20
+    hours = total_seconds // 3600
+    remainder = total_seconds % 3600
+    minutes = remainder // 60
+    seconds = remainder % 60
+    time_monitored_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    # --- 2) Build lists for charting and for counting malign ---
     timestamps = []
-    malign_counts = []
+    traffic_counts = []  # total packets each interval
+    malign_list = []     # malign_count each interval
 
     for rec in records:
         try:
-            data = json.loads(rec.result)
+            data = json.loads(rec.result)  # => { "results": [...], "malign_count": X, "timestamp": ...}
+            traffic_count = len(data.get("results", []))
+            malign_count = data.get("malign_count", 0)
             timestamps.append(rec.timestamp.strftime("%Y-%m-%d %H:%M:%S"))
-            malign_counts.append(data.get("malign_count", 0))
+            traffic_counts.append(traffic_count)
+            malign_list.append(malign_count)
         except Exception as e:
-            print(f"Error parsing record {rec.id}: {e}")
+            print(f"Error parsing MonitorResult {rec.id}: {e}")
+            # Skip this record if there's an error
             continue
 
-    # Instead of "total_intervals", compute how long monitoring has been active
-    time_monitored_str = "N/A"
-    if records:
-        first_timestamp = records[0].timestamp  # earliest record
-        now = datetime.utcnow()
-        diff = now - first_timestamp  # a timedelta
+    total_malign = sum(malign_list)
 
-        # Convert that timedelta to hours/minutes or days/hours, etc.
-        days = diff.days
-        seconds = diff.seconds
-        hours = days * 24 + seconds // 3600
-        minutes = (seconds % 3600) // 60
-        # Format a string (e.g. "2h 15m" or "1d 3h 20m", etc.)
-        if days > 0:
-            # e.g. "1d 2h 15m"
-            time_monitored_str = f"{days}d {hours % 24}h {minutes}m"
-        else:
-            # e.g. "2h 15m"
-            time_monitored_str = f"{hours}h {minutes}m"
-
-    total_malign = sum(malign_counts)
-    avg_malign = total_malign / len(records) if records else 0
+    # --- 3) Compute average malign per hour ---
+    total_hours = total_seconds / 3600.0
+    if total_hours > 0:
+        average_malign_per_hour = round(total_malign / total_hours, 2)
+    else:
+        average_malign_per_hour = 0
 
     summary_stats = {
-        "time_monitored": time_monitored_str,
+        "time_monitored": time_monitored_str,    # e.g. "00:05:20"
         "total_malign": total_malign,
-        "average_malign": round(avg_malign, 2)
+        "average_malign_per_hour": average_malign_per_hour
     }
 
-    return render_template("monitor_dashboard.html", 
-                           timestamps=timestamps, 
-                           malign_counts=malign_counts, 
-                           summary_stats=summary_stats,
-                           monitor_results=records)
+    return render_template(
+        "monitor_dashboard.html",
+        timestamps=timestamps,
+        traffic_counts=traffic_counts,   # for your line chart
+        summary_stats=summary_stats,
+        monitor_results=records
+    )
+
 
 
 
@@ -1673,6 +1697,6 @@ if __name__ == "__main__":
         db.create_all()
 
     threading.Timer(1, lambda: webbrowser.open_new("http://127.0.0.1:5000")).start()
-    app.run(debug=True)
+    app.run(debug=False)
 
 
