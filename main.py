@@ -1519,7 +1519,7 @@ def monitor_statistics():
     # 3) Force numeric conversion if needed, like you do for real-time:
     numeric_candidates = [
         'src_port', 'dst_port',
-        'src_bytes', 'dst_bytes', 'missed_bytes',
+        'missed_bytes',
         'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes'
     ]
 
@@ -1530,7 +1530,7 @@ def monitor_statistics():
     # 4) Define the features to plot (like you do in real-time_statistics.html)
     features_to_plot = [
         'src_ip', 'src_port', 'dst_ip', 'dst_port', 'proto', 'service',
-        'src_bytes', 'dst_bytes', 'conn_state', 'missed_bytes',
+        'conn_state', 'missed_bytes',
         'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes'
     ]
 
@@ -1697,6 +1697,6 @@ if __name__ == "__main__":
         db.create_all()
 
     threading.Timer(1, lambda: webbrowser.open_new("http://127.0.0.1:5000")).start()
-    app.run(debug=False)
+    app.run(debug=True)
 
 

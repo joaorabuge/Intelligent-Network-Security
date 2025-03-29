@@ -1,3 +1,4 @@
+<!-- templates/monitor_statistics.html -->
 {% extends "base.html" %}
 {% block content %}
 <div class="container mt-4">
@@ -11,7 +12,7 @@
     </div>
   </div>
 
-  <!-- Only show "Attack Types" chart if there's at least one malicious packet -->
+  <!-- Attack Types Chart (shown only if data exists) -->
   {% if graph_data.attack_types and graph_data.attack_types|length > 0 %}
   <div class="card bg-dark text-light mb-4 shadow-sm">
     <div class="card-body text-center">
@@ -23,31 +24,48 @@
 
   <h4 class="mt-4 text-white">Feature Statistics</h4>
 
-  <!-- Loop over each feature in 'stats' and generate a chart -->
+  {# Only map the features actually used in the charts #}
+  {% set featureNameMap = {
+    "src_ip": "Source IP",
+    "src_port": "Source Port",
+    "dst_ip": "Destination IP",
+    "dst_port": "Destination Port",
+    "proto": "Protocol",
+    "service": "Service",
+    "conn_state": "Connection State",
+    "missed_bytes": "Missed Bytes",
+    "src_pkts": "Source Packets",
+    "src_ip_bytes": "Source IP Bytes",
+    "dst_pkts": "Destination Packets",
+    "dst_ip_bytes": "Destination IP Bytes"
+  } %}
+
+  <!-- Loop over each feature in 'stats' and generate a chart if data exists -->
   {% for feature, info in stats.items() %}
     {% if info %}
     <div class="card bg-dark text-light mb-4 shadow-sm">
       <div class="card-body">
-        <h5 class="card-title text-center">{{ feature|capitalize }} Distribution</h5>
+        <h5 class="card-title text-center">
+          {{ featureNameMap[feature] if feature in featureNameMap else feature }} Distribution
+        </h5>
         <canvas id="chart_{{ feature }}" style="max-height: 300px;"></canvas>
       </div>
     </div>
     {% endif %}
   {% endfor %}
 
-  <!-- Back to Dashboard Button -->
+  <!-- Back to Dashboard Buttons -->
   <div class="text-center mt-4">
-    <a href="{{ url_for('dashboard') }}" class="btn btn-info" id="backToDashboardBtn">
-      Back to Dashboard
-    </a>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-info" id="backToDashboardBtn">Back to Dashboard</a>
+    <a href="{{ url_for('monitor_dashboard') }}" class="btn btn-secondary">Back to Monitoring Dashboard</a>
   </div>
 </div>
 
-<!-- Include Chart.js (CDN) -->
+<!-- Include Chart.js from CDN -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    // 1) Traffic Distribution (Benign vs Malicious)
+    // 1) Traffic Distribution (Benign vs. Malicious)
     const benignCount = {{ graph_data.benign_count }};
     const malignCount = {{ graph_data.malign_count }};
     const trafficCtx = document.getElementById("trafficChart").getContext("2d");
@@ -62,13 +80,11 @@ document.addEventListener("DOMContentLoaded", function() {
       },
       options: {
         responsive: true,
-        plugins: {
-          legend: { position: 'top' }
-        }
+        plugins: { legend: { position: 'top' } }
       }
     });
 
-    // 2) Attack Types (only if malicious packets exist)
+    // 2) Attack Types Chart (if data exists)
     {% if graph_data.attack_types %}
     const attackTypesData = {{ graph_data.attack_types|tojson }};
     const attackTypesKeys = Object.keys(attackTypesData);
@@ -85,91 +101,88 @@ document.addEventListener("DOMContentLoaded", function() {
         },
         options: {
           responsive: true,
-          scales: {
-            y: { beginAtZero: true }
-          }
+          scales: { y: { beginAtZero: true } }
         }
       });
     }
     {% endif %}
 
-    // 3) Feature-by-feature charts
+    // 3) Feature-by-feature Charts
     const statsData = {{ stats|tojson }};
-    for (const [feature, info] of Object.entries(statsData)) {
-      if (!info) continue;  // skip if null
+    // A minimal JavaScript map for friendly feature names (for the features shown)
+    const featureNameMapJS = {
+      "src_ip": "Source IP",
+      "src_port": "Source Port",
+      "dst_ip": "Destination IP",
+      "dst_port": "Destination Port",
+      "proto": "Protocol",
+      "service": "Service",
+      "conn_state": "Connection State",
+      "missed_bytes": "Missed Bytes",
+      "src_pkts": "Source Packets",
+      "src_ip_bytes": "Source IP Bytes",
+      "dst_pkts": "Destination Packets",
+      "dst_ip_bytes": "Destination IP Bytes"
+    };
 
+    for (const [feature, info] of Object.entries(statsData)) {
+      if (!info) continue;
       const ctx = document.getElementById("chart_" + feature);
       if (!ctx) continue;
-
+      const displayName = featureNameMapJS[feature] || feature;
       const chartCtx = ctx.getContext("2d");
 
       if (info.type === "numeric") {
-        // Numeric => histogram data
         const binEdges = info.bin_edges;
         const counts = info.counts;
-
-        // Create bin labels
         let labels = [];
         for (let i = 0; i < binEdges.length - 1; i++) {
-          const rangeStart = binEdges[i].toFixed(1);
-          const rangeEnd = binEdges[i+1].toFixed(1);
-          labels.push(`${rangeStart} - ${rangeEnd}`);
+          labels.push(`${binEdges[i].toFixed(1)} - ${binEdges[i+1].toFixed(1)}`);
         }
-
         new Chart(chartCtx, {
           type: 'bar',
           data: {
             labels: labels,
             datasets: [{
-              label: feature,
+              label: displayName,
               data: counts,
               backgroundColor: 'rgba(54, 162, 235, 0.6)'
             }]
           },
           options: {
             responsive: true,
-            scales: {
-              y: { beginAtZero: true }
-            },
-            plugins: {
-              legend: { display: false }
-            }
+            scales: { y: { beginAtZero: true } },
+            plugins: { legend: { display: true } }
           }
         });
-
       } else if (info.type === "categorical") {
-        // Categorical => frequency distribution
         const labels = Object.keys(info.counts);
         const values = Object.values(info.counts);
-
-        // Generate random colors for each category slice
         const backgroundColors = labels.map(() => {
           const r = Math.floor(Math.random() * 255);
           const g = Math.floor(Math.random() * 255);
           const b = Math.floor(Math.random() * 255);
           return `rgba(${r}, ${g}, ${b}, 0.6)`;
         });
-
         new Chart(chartCtx, {
           type: 'pie',
           data: {
             labels: labels,
             datasets: [{
+              label: displayName,
               data: values,
               backgroundColor: backgroundColors
             }]
           },
           options: {
             responsive: true,
-            plugins: {
-              legend: { position: 'top' }
-            }
+            plugins: { legend: { position: 'top' } }
           }
         });
       }
     }
 
-    // Optional: add "loading" button behavior
+    // Optional: add "loading" behavior to back button
     const backBtn = document.getElementById("backToDashboardBtn");
     if (backBtn) {
       backBtn.addEventListener("click", function(e) {
