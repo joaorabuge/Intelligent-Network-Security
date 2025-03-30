@@ -1695,6 +1695,13 @@ def view_monitor_context(context_id):
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
+        # Reset monitoring flags for all users on startup
+        users = User.query.all()
+        for user in users:
+            user.monitoring_on = False
+            user.monitoring_interface = None
+            user.monitoring_password = None
+        db.session.commit()
 
     threading.Timer(1, lambda: webbrowser.open_new("http://127.0.0.1:5000")).start()
     app.run(debug=True)

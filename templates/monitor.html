@@ -36,8 +36,9 @@
             {% endfor %}
           </select>
         </div>
-        <div class="mb-3">
-          <label for="new_context" class="form-label">Or Enter New Monitoring Context Name</label>
+        <!-- Wrap the new context input in a container with an ID -->
+        <div class="mb-3" id="new_context_div">
+          <label for="new_context" class="form-label">Enter New Monitoring Context Name</label>
           <input type="text" class="form-control" id="new_context" name="new_context" placeholder="e.g., 24/7 Monitor for Office">
         </div>
         <div class="text-center mt-4">
@@ -52,4 +53,25 @@
 <div class="text-center mt-4">
   <a href="{{ url_for('dashboard') }}" class="btn btn-info" id="backToDashboardBtn">Back to Dashboard</a>
 </div>
+
+<!-- JavaScript to toggle the visibility of the new context input field -->
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var contextSelect = document.getElementById('context_select');
+  var newContextDiv = document.getElementById('new_context_div');
+
+  function toggleNewContext() {
+    // Show new context input only if no existing context is selected (empty value)
+    if (contextSelect.value === "") {
+      newContextDiv.style.display = "block";
+    } else {
+      newContextDiv.style.display = "none";
+    }
+  }
+
+  // Run the function on page load and whenever the selection changes
+  toggleNewContext();
+  contextSelect.addEventListener('change', toggleNewContext);
+});
+</script>
 {% endblock %}
