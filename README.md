@@ -42,8 +42,12 @@ This project is an **Intelligent Network Security Analysis Platform** designed t
 
 ### Steps
 
-1. Clone the repository:
+1. Download Tag
 
    ```bash
-   git clone <repository-url>
-   cd Tese
+   cd Tese-1.0.0
+   cd dataset
+   ```
+Then you will upload the csv files (dataset) present in this OneDrive link: 
+https://1drv.ms/f/c/060eac35122b5005/EoYuAR0Hr-1CjOEMHTV-inUBWyWKtziddlI1sDdIySz3Pw?e=yd2znb
+
