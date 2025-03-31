@@ -10,7 +10,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from models import db, bcrypt, login_manager, User, PCAPResult, RealtimeResult, ChatContext, ChatMessage
+from models import db, bcrypt, login_manager, User, PCAPResult, RealtimeResult, ChatContext, ChatMessage, MonitorResult
 from config import Config
 from real_time_streaming import clean_previous_files, start_zeek_capture, process_zeek_logs, classify_traffic
 from real_time_streaming import get_active_interfaces
@@ -29,6 +29,9 @@ import pytz
 import threading
 import webbrowser
 
+# Global dictionaries to track monitoring threads and stop events per user
+monitor_threads = {}
+monitor_stop_events = {}
 
 
 # Caminhos principais
@@ -70,6 +73,39 @@ def save_global_update_time(ts):
 
 def open_browser():
     webbrowser.open_new("http://127.0.0.1:5000")
+
+def combine_raw_and_final_fixed(raw_csv, final_csv, output_csv):
+    """
+    Reads raw_csv and final_csv, verifies they have the same number of rows,
+    copies the raw data, adds the 'type' and 'label' columns from the final CSV,
+    and writes the result to output_csv.
+    """
+    df_raw = pd.read_csv(raw_csv)
+    df_final = pd.read_csv(final_csv)
+    if df_raw.shape[0] != df_final.shape[0]:
+        raise ValueError("The raw and final CSV files do not have the same number of rows.")
+    df_combined = df_raw.copy()
+    for col in ["type", "label"]:
+        if col in df_final.columns:
+            df_combined[col] = df_final[col]
+        else:
+            print(f"Warning: Column '{col}' not found in the final CSV.")
+    df_combined.to_csv(output_csv, index=False)
+    return output_csv
+
+def append_to_csv(existing_path, new_path):
+    import pandas as pd
+    # Read the existing CSV
+    existing_df = pd.read_csv(existing_path)
+    # Read the new CSV
+    new_df = pd.read_csv(new_path)
+    # Concatenate the dataframes
+    appended_df = pd.concat([existing_df, new_df], ignore_index=True)
+    # Optional: Remove duplicates (if needed)
+    appended_df = appended_df.drop_duplicates()
+    # Save back to the same file
+    appended_df.to_csv(existing_path, index=False)
+    return existing_path
 
 
 import time
@@ -232,42 +268,36 @@ def update_pipeline():
 
 
 def generate_graph_data_1(data):
-    """
-    Processa os dados e retorna a distribuição de pacotes benignos e malignos
-    e os tipos de ataques para uso na interface.
-    """
-    # Garantir que a coluna 'label' exista e esteja em formato esperado
-    if "label" not in data.columns:
-        print("DEBUG: Coluna 'label' ausente nos dados fornecidos.")
-        return {
-            "benign_count": 0,
-            "malign_count": 0,
-            "attack_types": {}
-        }
-    
-    # Garantir que os valores de 'label' sejam strings e normalizados
+    # Convert to lowercase
     data["label"] = data["label"].astype(str).str.lower()
+    # Map all possible synonyms or numeric codes:
+    data["label"] = data["label"].replace({
+        "benigno": "benign",
+        "0": "benign",
+        "0.0": "benign",
+        "maligno": "malign",
+        "1": "malign",
+        "1.0": "malign",
+        "malicious": "malign",
+        # add any other synonyms if needed
+    })
 
-    # Contar pacotes benignos e malignos
     benign_count = data[data["label"] == "benign"].shape[0]
     malign_count = data[data["label"] == "malign"].shape[0]
 
-    print(f"DEBUG: Contagem de benignos: {benign_count}, malignos: {malign_count}")
-
-    # Contar tipos de ataques, apenas para pacotes malignos
+    # Attack types only among malicious
     if "type" in data.columns and malign_count > 0:
         attack_types = data[data["label"] == "malign"]["type"].value_counts().to_dict()
     else:
-        print("DEBUG: Coluna 'type' ausente ou nenhum pacote maligno encontrado.")
         attack_types = {}
-
-    print(f"DEBUG: Tipos de ataques identificados: {attack_types}")
 
     return {
         "benign_count": benign_count,
         "malign_count": malign_count,
         "attack_types": attack_types,
     }
+
+
 
 import pandas as pd
 
@@ -374,6 +404,117 @@ def get_network_context_from_combined(csv_path="real-time/combined_data.csv"):
         return {"error": str(e)}
 
 
+# --- Updated Per-User Monitoring Function (Appending to a Single Context File) ---
+def monitor_traffic(user_id, interface, admin_password, stop_event, context_name):
+    """
+    Runs a continuous monitoring loop for a specific user.
+    Each cycle:
+      - Captures traffic for 20 seconds.
+      - Processes and classifies the traffic.
+      - Saves a MonitorResult.
+      - Combines raw and final CSVs (creates a new combined file).
+      - If a ChatContext (with the given context_name) already exists, appends new data to its CSV.
+      - Otherwise, creates a new ChatContext.
+      - Then waits 40 seconds before the next cycle.
+    """
+    with app.app_context():
+        while not stop_event.is_set():
+            try:
+                print(f"[Monitoring] Starting capture on interface {interface} for user {user_id} for 20 seconds...")
+                clean_previous_files()
+                # Capture traffic for 20 seconds.
+                start_zeek_capture(interface=interface, duration=20, password=admin_password)
+                
+                print("[Monitoring] Processing Zeek logs...")
+                data = process_zeek_logs()
+                
+                print("[Monitoring] Classifying traffic...")
+                try:
+                    results, _ = classify_traffic(data)
+                except Exception as e:
+                    print(f"[Monitoring] classify_traffic error for user {user_id}: {e}")
+                    results = []
+                
+                # Count malign traffic from the list of packets
+                malign_count = sum(1 for pkt in results if pkt.get("label", "").lower() == "malign")
+                print(f"[Monitoring] Detected {malign_count} malign packets.")
+
+                # Save the monitoring results as a new MonitorResult
+                record = {
+                    "results": results,
+                    "malign_count": malign_count,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                monitor_result = MonitorResult(
+                    result=json.dumps(record),
+                    user_id=user_id
+                )
+                db.session.add(monitor_result)
+                db.session.commit()
+                print("[Monitoring] MonitorResult saved.")
+
+                # Attempt to combine the raw and final CSVs into a new file
+                try:
+                    print("[Monitoring] Attempting to combine CSVs...")
+                    combined_new = combine_raw_and_final(
+                        raw_csv="real-time/raw_captured_data.csv",
+                        final_csv="real-time/final_captured_data.csv",
+                        user_id=user_id,
+                        analysis_type="monitor"  # constant for monitoring intervals
+                    )
+                    print(f"[Monitoring] New combined CSV created at: {combined_new}")
+                except Exception as e:
+                    print("[Monitoring] Error combining CSVs:", e)
+                    combined_new = None
+
+                if combined_new:
+                    # Try to fetch an existing ChatContext for monitoring with the given context_name.
+                    existing_context = ChatContext.query.filter_by(
+                        user_id=user_id,
+                        analysis_type="monitor",
+                        analysis_name=context_name
+                    ).first()
+
+                    if existing_context:
+                        try:
+                            # Append new data to the existing CSV file.
+                            append_to_csv(existing_context.file_path, combined_new)
+                            print("[Monitoring] Existing ChatContext file appended successfully.")
+                            # Optionally, remove the temporary new combined file.
+                            os.remove(combined_new)
+                        except Exception as e:
+                            print("[Monitoring] Error appending to existing ChatContext:", e)
+                            # As a fallback, update the file_path with the new file.
+                            existing_context.file_path = combined_new
+                            db.session.commit()
+                            print("[Monitoring] Existing ChatContext file_path updated (fallback).")
+                    else:
+                        # No existing context – create one with the provided context name.
+                        new_context = ChatContext(
+                            user_id=user_id,
+                            analysis_type="monitor",
+                            result_id=monitor_result.id,  # linking current monitor result
+                            file_path=combined_new,
+                            analysis_name=context_name
+                        )
+                        db.session.add(new_context)
+                        db.session.commit()
+                        print("[Monitoring] New ChatContext created for monitoring.")
+                
+                if malign_count > 0:
+                    print("[Monitoring] Malign traffic detected!")
+                else:
+                    print("[Monitoring] No malign traffic detected this interval.")
+            except Exception as e:
+                print(f"[Monitoring] Error: {e}")
+            
+            # Wait 40 seconds before starting the next monitoring cycle
+            print("[Monitoring] Waiting 40 seconds before next capture cycle...")
+            time.sleep(40)
+        print(f"[Monitoring] Stop signal received. Monitoring for user {user_id} is stopping.")
+
+
+
 
 
 
@@ -419,6 +560,7 @@ def register():
 
 
 
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -443,8 +585,30 @@ def login():
 
 @app.route("/logout")
 def logout():
-    logout_user()
-    return redirect(url_for("home"))  # Redirect after logout
+    if current_user.is_authenticated:
+        user_id = current_user.id
+
+        # Stop the monitoring thread if it exists
+        if user_id in monitor_stop_events:
+            monitor_stop_events[user_id].set()
+            thread = monitor_threads.get(user_id)
+            if thread is not None:
+                thread.join(timeout=5)
+            monitor_stop_events.pop(user_id, None)
+            monitor_threads.pop(user_id, None)
+
+        # Mark monitoring as off in the database
+        current_user.monitoring_on = False
+        current_user.monitoring_interface = None
+        current_user.monitoring_password = None
+        db.session.commit()
+
+        # Finally log out the user
+        logout_user()
+
+    return redirect(url_for("home"))
+
+
 
 
 
@@ -855,10 +1019,20 @@ def pcap_statistics(result_id):
 @app.route("/results")
 @login_required
 def results():
-    # Query ChatContext records for PCAP and real-time analyses
-    pcap_contexts = ChatContext.query.filter_by(user_id=current_user.id, analysis_type="pcap").order_by(ChatContext.timestamp.desc()).all()
-    realtime_contexts = ChatContext.query.filter_by(user_id=current_user.id, analysis_type="real_time").order_by(ChatContext.timestamp.desc()).all()
-    return render_template("results.html", pcap_contexts=pcap_contexts, realtime_contexts=realtime_contexts)
+    pcap_contexts = ChatContext.query.filter_by(
+        user_id=current_user.id, analysis_type="pcap"
+    ).order_by(ChatContext.timestamp.desc()).all()
+    realtime_contexts = ChatContext.query.filter_by(
+        user_id=current_user.id, analysis_type="real_time"
+    ).order_by(ChatContext.timestamp.desc()).all()
+    monitor_contexts = ChatContext.query.filter_by(
+        user_id=current_user.id, analysis_type="monitor"
+    ).order_by(ChatContext.timestamp.desc()).all()
+    return render_template("results.html", 
+                           pcap_contexts=pcap_contexts, 
+                           realtime_contexts=realtime_contexts,
+                           monitor_contexts=monitor_contexts)
+
 
 
 
@@ -1173,9 +1347,363 @@ def download_report():
 
     return send_file(pdf_path, as_attachment=True)
 
+@app.route("/monitor", methods=["GET", "POST"])
+@login_required
+def monitor():
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "start":
+            interface = request.form.get("interface")
+            admin_password = request.form.get("admin_password")
+            # Read from the drop-down and the "new context" text field.
+            context_select = request.form.get("context_select")
+            new_context = request.form.get("new_context")
+
+            # Decide which context name to use: prefer new_context if provided; otherwise, the drop‑down value.
+            if new_context and new_context.strip():
+                context_name = new_context.strip()
+            elif context_select and context_select.strip():
+                context_name = context_select.strip()
+            else:
+                # If nothing is provided, you can default to a new name
+                context_name = f"Monitor_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+
+            current_user.monitoring_on = True
+            current_user.monitoring_interface = interface
+            current_user.monitoring_password = admin_password
+            db.session.commit()
+
+            # Start the per-user monitoring thread with context_name as an argument
+            stop_event = threading.Event()
+            monitor_stop_events[current_user.id] = stop_event
+            monitoring_thread = threading.Thread(
+                target=monitor_traffic,
+                args=(current_user.id, interface, admin_password, stop_event, context_name)
+            )
+            monitoring_thread.daemon = True
+            monitoring_thread.start()
+            monitor_threads[current_user.id] = monitoring_thread
+
+            flash("24/7 monitoring started successfully!", "success")
+        elif action == "stop":
+            # Stop the monitoring thread if it exists
+            if current_user.id in monitor_stop_events:
+                monitor_stop_events[current_user.id].set()
+                thread = monitor_threads.get(current_user.id)
+                if thread is not None:
+                    thread.join(timeout=5)
+                monitor_stop_events.pop(current_user.id, None)
+                monitor_threads.pop(current_user.id, None)
+            # Mark monitoring as off in the user record
+            current_user.monitoring_on = False
+            current_user.monitoring_interface = None
+            current_user.monitoring_password = None
+            db.session.commit()
+            flash("Monitoring stopped.", "success")
+
+    # For GET: also query the user's existing monitor contexts
+    existing_contexts = ChatContext.query.filter_by(
+        user_id=current_user.id, analysis_type="monitor"
+    ).order_by(ChatContext.timestamp.desc()).all()
+
+    active_monitoring = current_user.monitoring_on
+    active_interfaces = get_active_interfaces()
+    return render_template("monitor.html",
+                           active_interfaces=active_interfaces,
+                           active_monitoring=active_monitoring,
+                           existing_contexts=existing_contexts)
+
+
+
+
+@app.route("/monitor-dashboard", methods=["GET"])
+@login_required
+def monitor_dashboard():
+    # Retrieve all monitoring records in chronological order
+    records = MonitorResult.query.filter_by(
+        user_id=current_user.id
+    ).order_by(MonitorResult.timestamp.asc()).all()
+
+    # If no records, just return empty stats
+    if not records:
+        summary_stats = {
+            "time_monitored": "00:00:00",
+            "total_malign": 0,
+            "average_malign_per_hour": 0
+        }
+        return render_template(
+            "monitor_dashboard.html",
+            timestamps=[],
+            traffic_counts=[],
+            summary_stats=summary_stats,
+            monitor_results=[]
+        )
+
+    num_records = len(records)
+
+    # --- 1) TIME MONITORED (string) ---
+    # Each record is 20s. total_seconds = num_records * 20
+    total_seconds = num_records * 20
+    hours = total_seconds // 3600
+    remainder = total_seconds % 3600
+    minutes = remainder // 60
+    seconds = remainder % 60
+    time_monitored_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    # --- 2) Build lists for charting and for counting malign ---
+    timestamps = []
+    traffic_counts = []  # total packets each interval
+    malign_list = []     # malign_count each interval
+
+    for rec in records:
+        try:
+            data = json.loads(rec.result)  # => { "results": [...], "malign_count": X, "timestamp": ...}
+            traffic_count = len(data.get("results", []))
+            malign_count = data.get("malign_count", 0)
+            timestamps.append(rec.timestamp.strftime("%Y-%m-%d %H:%M:%S"))
+            traffic_counts.append(traffic_count)
+            malign_list.append(malign_count)
+        except Exception as e:
+            print(f"Error parsing MonitorResult {rec.id}: {e}")
+            # Skip this record if there's an error
+            continue
+
+    total_malign = sum(malign_list)
+
+    # --- 3) Compute average malign per hour ---
+    total_hours = total_seconds / 3600.0
+    if total_hours > 0:
+        average_malign_per_hour = round(total_malign / total_hours, 2)
+    else:
+        average_malign_per_hour = 0
+
+    summary_stats = {
+        "time_monitored": time_monitored_str,    # e.g. "00:05:20"
+        "total_malign": total_malign,
+        "average_malign_per_hour": average_malign_per_hour
+    }
+
+    return render_template(
+        "monitor_dashboard.html",
+        timestamps=timestamps,
+        traffic_counts=traffic_counts,   # for your line chart
+        summary_stats=summary_stats,
+        monitor_results=records
+    )
+
+
+
+
+@app.route("/monitor-statistics", methods=["GET"])
+@login_required
+def monitor_statistics():
+    import os, pandas as pd, numpy as np
+    
+    # 1) Find the single ChatContext for the user with analysis_type="monitor".
+    #    If you want the *latest* one, order_by timestamp desc. If you only ever create one,
+    #    you can just do .first() or .order_by(...).first().
+    context = ChatContext.query.filter_by(
+        user_id=current_user.id,
+        analysis_type="monitor"
+    ).order_by(ChatContext.timestamp.desc()).first()
+
+    if not context or not os.path.exists(context.file_path):
+        flash("No monitor context file found.", "info")
+        return render_template("monitor_statistics.html", stats={}, benign_malign_counts={}, graph_data={})
+
+    # 2) Read the appended CSV file from context.file_path
+    df = pd.read_csv(context.file_path)
+    print("DEBUG - Monitor CSV shape:", df.shape)
+    print("DEBUG - Monitor CSV columns:", df.columns.tolist())
+
+    # 3) Force numeric conversion if needed, like you do for real-time:
+    numeric_candidates = [
+        'src_port', 'dst_port',
+        'missed_bytes',
+        'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes'
+    ]
+
+    for col in numeric_candidates:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # 4) Define the features to plot (like you do in real-time_statistics.html)
+    features_to_plot = [
+        'src_ip', 'src_port', 'dst_ip', 'dst_port', 'proto', 'service',
+        'conn_state', 'missed_bytes',
+        'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes'
+    ]
+
+    # 5) Build stats dictionary
+    stats = {}
+    for feature in features_to_plot:
+        if feature not in df.columns:
+            stats[feature] = None
+            continue
+        if np.issubdtype(df[feature].dtype, np.number):
+            counts, bin_edges = np.histogram(df[feature].dropna(), bins=10)
+            stats[feature] = {
+                "type": "numeric",
+                "counts": counts.tolist(),
+                "bin_edges": bin_edges.tolist()
+            }
+        else:
+            value_counts = df[feature].value_counts().head(10).to_dict()
+            stats[feature] = {
+                "type": "categorical",
+                "counts": value_counts
+            }
+
+    # 6) Compute Benign vs. Malign distribution (like you do for real-time)
+    benign_malign_counts = {"benign": 0, "malign": 0}
+    if "label" in df.columns:
+        df["label"] = df["label"].astype(str).str.lower()
+        benign_count = (df["label"] == "benign").sum()
+        malign_count = (df["label"] == "malign").sum()
+        benign_malign_counts = {"benign": int(benign_count), "malign": int(malign_count)}
+
+    # 7) Generate overall graph_data (for your pie chart, attack types, etc.)
+    graph_data = generate_graph_data_1(df)
+
+    # 8) Render your template
+    return render_template(
+        "monitor_statistics.html",
+        stats=stats,
+        benign_malign_counts=benign_malign_counts,
+        graph_data=graph_data
+    )
+
+
+@app.route("/stop_monitor", methods=["POST"])
+@login_required
+def stop_monitor():
+    """
+    An alternative endpoint to stop monitoring manually.
+    """
+    user_id = current_user.id
+    if user_id in monitor_stop_events:
+        monitor_stop_events[user_id].set()
+        thread = monitor_threads.get(user_id)
+        if thread is not None:
+            thread.join(timeout=5)
+        monitor_stop_events.pop(user_id, None)
+        monitor_threads.pop(user_id, None)
+        flash("Monitoring stopped successfully.", "success")
+    else:
+        flash("No active monitoring found.", "info")
+    return redirect(url_for("monitor"))
+
+@app.route("/delete-monitor-context/<int:context_id>", methods=["POST"])
+@login_required
+def delete_monitor_context(context_id):
+    # Fetch the monitoring context (analysis_type="monitor") for the current user
+    context = ChatContext.query.filter_by(
+        id=context_id,
+        user_id=current_user.id,
+        analysis_type="monitor"
+    ).first_or_404()
+
+    # Remove the associated CSV file if it exists
+    if os.path.exists(context.file_path):
+        os.remove(context.file_path)
+
+    # Delete the context record from the database
+    db.session.delete(context)
+    db.session.commit()
+    flash("Monitoring context deleted successfully.", "success")
+    return redirect(url_for("results"))
+
+# Route to view a monitor context (with statistics)
+@app.route("/view-monitor-context/<int:context_id>")
+@login_required
+def view_monitor_context(context_id):
+    # Fetch the monitoring context for the current user
+    context = ChatContext.query.filter_by(
+        id=context_id,
+        user_id=current_user.id,
+        analysis_type="monitor"
+    ).first_or_404()
+    
+    # Build absolute file path if necessary
+    full_path = context.file_path
+    if not os.path.isabs(full_path):
+        full_path = os.path.join(app.root_path, full_path)
+    
+    if not os.path.exists(full_path):
+        flash("Context file not found.", "danger")
+        return redirect(url_for("results"))
+    
+    # Read the CSV file from the context
+    df = pd.read_csv(full_path)
+    
+    # Force numeric conversion on known numeric columns
+    numeric_candidates = [
+        'src_port', 'dst_port',
+        'src_bytes', 'dst_bytes', 'missed_bytes',
+        'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes'
+    ]
+
+    for col in numeric_candidates:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Build statistics for each feature (as in monitor_statistics)
+    features_to_plot = ['src_ip', 'src_port', 'dst_ip', 'dst_port', 'proto', 'service',
+                        'src_bytes', 'dst_bytes', 'conn_state', 'missed_bytes',
+                        'src_pkts', 'src_ip_bytes', 'dst_pkts', 'dst_ip_bytes']
+    stats = {}
+    for feature in features_to_plot:
+        if feature not in df.columns:
+            stats[feature] = None
+            continue
+        if np.issubdtype(df[feature].dtype, np.number):
+            counts, bin_edges = np.histogram(df[feature].dropna(), bins=10)
+            stats[feature] = {
+                "type": "numeric",
+                "counts": counts.tolist(),
+                "bin_edges": bin_edges.tolist()
+            }
+        else:
+            value_counts = df[feature].value_counts().head(10).to_dict()
+            stats[feature] = {
+                "type": "categorical",
+                "counts": value_counts
+            }
+    
+    # Compute benign vs. malicious counts (if the "label" column exists)
+    benign_malign_counts = {"benign": 0, "malign": 0}
+    if "label" in df.columns:
+        df["label"] = df["label"].astype(str).str.lower()
+        benign_count = (df["label"] == "benign").sum()
+        malign_count = (df["label"] == "malign").sum()
+        benign_malign_counts = {"benign": int(benign_count), "malign": int(malign_count)}
+    
+    # Generate overall graph data using our helper function
+    graph_data = generate_graph_data_1(df)
+    
+    # Render the view with all the computed stats and graphs
+    return render_template("view_monitor_context.html",
+                           context=context,
+                           stats=stats,
+                           benign_malign_counts=benign_malign_counts,
+                           graph_data=graph_data)
+
+
+
+
+
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    threading.Timer(1, open_browser).start()
-    app.run(debug=False)
+        # Reset monitoring flags for all users on startup
+        users = User.query.all()
+        for user in users:
+            user.monitoring_on = False
+            user.monitoring_interface = None
+            user.monitoring_password = None
+        db.session.commit()
+
+    threading.Timer(1, lambda: webbrowser.open_new("http://127.0.0.1:5000")).start()
+    app.run(debug=True)
+
 

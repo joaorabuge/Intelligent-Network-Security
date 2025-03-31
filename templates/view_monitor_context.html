@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2 class="text-center mb-4">Monitoring Context Details</h2>
+
+  <div class="card mb-4 shadow-sm">
+    <div class="card-body">
+      <h5 class="card-title">Context Information</h5>
+      <p><strong>Context Name:</strong> {{ context.analysis_name }}</p>
+      <p><strong>Timestamp:</strong> {{ context.timestamp }}</p>
+    </div>
+  </div>
+
+  <!-- Benign vs. Malign Pie Chart -->
+  <div class="card mb-4 shadow-sm">
+    <div class="card-body text-center">
+      <h5 class="card-title">Benign vs. Malicious Traffic</h5>
+      <canvas id="trafficChart" style="max-height: 300px;"></canvas>
+    </div>
+  </div>
+
+  <!-- Attack Types Bar Chart (only if available) -->
+  {% if graph_data.attack_types and graph_data.attack_types|length > 0 %}
+  <div class="card mb-4 shadow-sm">
+    <div class="card-body text-center">
+      <h5 class="card-title">Attack Types</h5>
+      <canvas id="attackChart" style="max-height: 300px;"></canvas>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Feature Statistics Charts -->
+  <h4 class="mt-4">Feature Statistics</h4>
+  {% for feature, info in stats.items() %}
+    {% if info %}
+    <div class="card mb-4 shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title text-center">{{ feature|capitalize }} Distribution</h5>
+        <canvas id="chart_{{ feature }}" style="max-height: 300px;"></canvas>
+      </div>
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  <div class="text-center mt-4">
+    <a href="{{ url_for('results') }}" class="btn btn-info">Back to Results</a>
+  </div>
+</div>
+
+<!-- Include Chart.js (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Traffic Distribution Pie Chart
+    const benignCount = {{ graph_data.benign_count }};
+    const malignCount = {{ graph_data.malign_count }};
+    const trafficCtx = document.getElementById("trafficChart").getContext("2d");
+    new Chart(trafficCtx, {
+      type: 'pie',
+      data: {
+        labels: ['Benign', 'Malicious'],
+        datasets: [{
+          data: [benignCount, malignCount],
+          backgroundColor: ['#28a745', '#dc3545']
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'top' } }
+      }
+    });
+
+    // Attack Types Bar Chart (if exists)
+    {% if graph_data.attack_types %}
+    const attackTypesData = {{ graph_data.attack_types|tojson }};
+    const attackTypesKeys = Object.keys(attackTypesData);
+    if (attackTypesKeys.length > 0) {
+      const attackChartCtx = document.getElementById("attackChart").getContext("2d");
+      new Chart(attackChartCtx, {
+        type: 'bar',
+        data: {
+          labels: attackTypesKeys,
+          datasets: [{
+            data: Object.values(attackTypesData),
+            backgroundColor: '#fd7e14'
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+    {% endif %}
+
+    // Feature Statistics Charts
+    const statsData = {{ stats|tojson }};
+    for (const [feature, info] of Object.entries(statsData)) {
+      if (!info) continue;
+      const ctx = document.getElementById("chart_" + feature);
+      if (!ctx) continue;
+      const chartCtx = ctx.getContext("2d");
+
+      if (info.type === "numeric") {
+        const binEdges = info.bin_edges;
+        const counts = info.counts;
+        let labels = [];
+        for (let i = 0; i < binEdges.length - 1; i++) {
+          labels.push(`${parseFloat(binEdges[i]).toFixed(1)} - ${parseFloat(binEdges[i+1]).toFixed(1)}`);
+        }
+        new Chart(chartCtx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: feature,
+              data: counts,
+              backgroundColor: 'rgba(54, 162, 235, 0.6)'
+            }]
+          },
+          options: {
+            responsive: true,
+            scales: { y: { beginAtZero: true } },
+            plugins: { legend: { display: false } }
+          }
+        });
+      } else if (info.type === "categorical") {
+        const labels = Object.keys(info.counts);
+        const values = Object.values(info.counts);
+        const backgroundColors = labels.map(() => {
+          const r = Math.floor(Math.random() * 255);
+          const g = Math.floor(Math.random() * 255);
+          const b = Math.floor(Math.random() * 255);
+          return `rgba(${r}, ${g}, ${b}, 0.6)`;
+        });
+        new Chart(chartCtx, {
+          type: 'pie',
+          data: {
+            labels: labels,
+            datasets: [{
+              data: values,
+              backgroundColor: backgroundColors
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { position: 'top' } }
+          }
+        });
+      }
+    }
+});
+</script>
+{% endblock %}

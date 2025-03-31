@@ -61,13 +61,26 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(150), nullable=False, unique=True)
     email = db.Column(db.String(150), nullable=False, unique=True)
     password = db.Column(db.String(255), nullable=False)
-    # Novo campo para armazenar o timestamp da última atualização do modelo para este usuário
     last_model_update_time = db.Column(db.DateTime, nullable=True)
     
+    # Existing relationships...
     pcap_results = db.relationship('PCAPResult', back_populates='user', lazy=True)
     realtime_results = db.relationship('RealtimeResult', back_populates='user', lazy=True)
+    monitor_results = db.relationship('MonitorResult', backref='user', lazy=True)
+
+    # New columns for 24/7 monitoring
+    monitoring_on = db.Column(db.Boolean, default=False)
+    monitoring_interface = db.Column(db.String(50), nullable=True)
+    monitoring_password = db.Column(db.String(100), nullable=True)
 
     def update_model_timestamp(self):
-        """Atualiza o timestamp de atualização do modelo para o usuário."""
         self.last_model_update_time = datetime.utcnow()
         db.session.commit()
+
+
+# New model for storing monitoring alerts
+class MonitorResult(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=db.func.now())
+    result = db.Column(db.Text, nullable=False)  # JSON storing the classification results
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)

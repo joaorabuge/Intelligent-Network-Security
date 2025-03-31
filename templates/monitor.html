@@ -1,0 +1,77 @@
+<!-- templates/monitor.html -->
+{% extends "base.html" %}
+{% block content %}
+<div class="card mt-4">
+  <div class="card-body">
+    <h5 class="card-title">Real-Time Traffic Analysis</h5>
+
+    {% if active_monitoring %}
+      <p class="text-success">Monitoring is currently active.</p>
+      <div class="d-flex flex-row gap-3 align-items-center">
+        <form method="POST" action="{{ url_for('monitor') }}">
+          <button type="submit" name="action" value="stop" class="btn btn-danger">Stop Monitoring</button>
+        </form>
+        <a href="{{ url_for('monitor_dashboard') }}" class="btn btn-info">Monitor Dashboard</a>
+      </div>
+    {% else %}
+      <form method="POST" action="{{ url_for('monitor') }}">
+        <div class="mb-3">
+          <label for="admin_password" class="form-label">Administrator Password</label>
+          <input type="password" class="form-control" id="admin_password" name="admin_password" required>
+        </div>
+        <div class="mb-3">
+          <label for="interface" class="form-label">Network Interface</label>
+          <select class="form-select" id="interface" name="interface" required>
+            {% for iface in active_interfaces %}
+              <option value="{{ iface }}">{{ iface }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="context_select" class="form-label">Select Existing Monitoring Context (optional)</label>
+          <select class="form-select" id="context_select" name="context_select">
+            <option value="">-- New Context --</option>
+            {% for context in existing_contexts %}
+              <option value="{{ context.analysis_name }}">{{ context.analysis_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <!-- Wrap the new context input in a container with an ID -->
+        <div class="mb-3" id="new_context_div">
+          <label for="new_context" class="form-label">Enter New Monitoring Context Name</label>
+          <input type="text" class="form-control" id="new_context" name="new_context" placeholder="e.g., 24/7 Monitor for Office">
+        </div>
+        <div class="text-center mt-4">
+          <button type="submit" name="action" value="start" class="btn btn-success">Start Monitoring</button>
+          <a href="{{ url_for('monitor_dashboard') }}" class="btn btn-info ms-3">Monitor Dashboard</a>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="text-center mt-4">
+  <a href="{{ url_for('dashboard') }}" class="btn btn-info" id="backToDashboardBtn">Back to Dashboard</a>
+</div>
+
+<!-- JavaScript to toggle the visibility of the new context input field -->
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var contextSelect = document.getElementById('context_select');
+  var newContextDiv = document.getElementById('new_context_div');
+
+  function toggleNewContext() {
+    // Show new context input only if no existing context is selected (empty value)
+    if (contextSelect.value === "") {
+      newContextDiv.style.display = "block";
+    } else {
+      newContextDiv.style.display = "none";
+    }
+  }
+
+  // Run the function on page load and whenever the selection changes
+  toggleNewContext();
+  contextSelect.addEventListener('change', toggleNewContext);
+});
+</script>
+{% endblock %}
