@@ -45,7 +45,7 @@ This project is an **Intelligent Network Security Analysis Platform** designed t
 1. Download Tag
 
    ```bash
-   cd Tese-1.0.0
+   cd Intelligent-Network-Security-1.0.1
    cd dataset
    ```
 Then you will upload the csv files (dataset) present in this OneDrive link: 
