@@ -1,10 +1,10 @@
 import os
+import openai
 import time
 import sys
 sys.path.append("real-time")
 import subprocess
 import hashlib
-import pexpect
 import json
 from flask import Flask, render_template, redirect, url_for, flash, request, session
 from flask_sqlalchemy import SQLAlchemy
@@ -1240,60 +1240,115 @@ def analytics():
 @app.route("/download-report")
 @login_required
 def download_report():
+    import os
+    import json
+    import re
+    import unicodedata
     import matplotlib
-    matplotlib.use('Agg')  # Non-GUI backend
+    matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     from textwrap import wrap
-    import re
+    from flask import send_file, current_app
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter
 
-    # Combine anomalies from RealTimeResult & PCAPResult
+    # 1) Gather all packets from RealTimeResult & PCAPResult
     past_results = RealtimeResult.query.filter_by(user_id=current_user.id).all()
     pcap_results = PCAPResult.query.filter_by(user_id=current_user.id).all()
     all_packets = []
-    for result in past_results + pcap_results:
+    for r in past_results + pcap_results:
         try:
-            data = json.loads(result.result)
-            all_packets.extend(data)
+            all_packets.extend(json.loads(r.result))
         except:
-            continue
+            pass
 
-    # --- Filter out rows whose 'type' == 'normal' to match your /analytics logic ---
-    anomalies = [pkt for pkt in all_packets if pkt.get('type', 'unknown').lower() != 'normal']
-    total_anomalies = len(anomalies)
+    # 2) Split anomalies vs. normal
+    anomalies   = [
+        pkt for pkt in all_packets
+        if pkt.get('type','unknown').lower() != 'normal'
+    ]
+    total_anom  = len(anomalies)
+    total_pkts  = len(all_packets)
+    normal_pkts = total_pkts - total_anom
 
-    # Attack distribution for anomalies only
+    # 3) Build attack distribution
     attack_distribution = {}
-    for anomaly in anomalies:
-        attack = anomaly.get("type", "unknown").lower()
-        attack_distribution[attack] = attack_distribution.get(attack, 0) + 1
+    for pkt in anomalies:
+        t = pkt.get('type','unknown').lower()
+        attack_distribution[t] = attack_distribution.get(t, 0) + 1
 
-    # Generate bar chart with matplotlib
+    # 4) Stats text
+    stats_text = (
+        f"Network summary: total packets = {total_pkts}, "
+        f"normal = {normal_pkts}, anomalous = {total_anom}. "
+        f"Attack breakdown: {attack_distribution}."
+    )
+
+    # 5) Bar chart
     fig, ax = plt.subplots()
-    types = list(attack_distribution.keys())
+    types  = list(attack_distribution.keys())
     counts = list(attack_distribution.values())
     ax.bar(types, counts, color='skyblue')
     ax.set_xlabel('Attack Type')
     ax.set_ylabel('Count')
     ax.set_title('Attack Distribution (Anomalies Only)')
     plt.tight_layout()
-    chart_path = "attack_chart.png"
+    chart_path = os.path.join(current_app.root_path, "attack_chart.png")
     plt.savefig(chart_path)
-    plt.close()
+    plt.close(fig)
 
-    # Chatbot for recommendations
-    prompt = (
-        f"Attack distribution: {attack_distribution}.\n"
-        "If there are no anomalous attacks (i.e. if 'normal' is the only traffic), then the network appears safe—please provide minimal, best-practice security recommendations to maintain this safety. "
-        "Otherwise, if there are anomalous attacks, please provide detailed security recommendations and cautions to prevent these types of attacks in the future."
+    # 6) Get high-level recommendations from the AI
+    sys_msg = (
+        "You are a senior network-security strategist writing an executive-level "
+        "analysis report. Focus on high-level best practices. If there are zero "
+        "anomalies, suggest maintenance practices to keep the network clean. "
+        "If there are anomalies, give focused, theoretical recommendations "
+        "to defend against exactly those attack types."
     )
+    user_msg = stats_text
+    resp = openai.ChatCompletion.create(
+        model="o4-mini",
+        messages=[
+            {"role": "system", "content": sys_msg},
+            {"role": "user",   "content": user_msg}
+        ]
+    )
+    recommendations = resp.choices[0].message.content.strip()
 
-    recommendations = generate_chatbot_response(prompt)
+    # 7) Normalize unicode dashes/spaces so Helvetica can render
+    for fancy in ("\u2011","\u2012","\u2013","\u2014","\u2015"):
+        recommendations = recommendations.replace(fancy, "-")
+    recommendations = recommendations.replace("\u00A0"," ")
+    recommendations = "".join(
+        ch for ch in recommendations
+        if unicodedata.category(ch)[0] != "C"
+    )
+    recommendations = re.sub(r"\*\*(.*?)\*\*", r"\1", recommendations)
 
-    # Remove simple Markdown bold: **text** => text
-    recommendations = re.sub(r'\*\*(.*?)\*\*', r'\1', recommendations)
+    # 7b) Inject explicit newlines before every marker and build bullet list
+    clean = recommendations
+    # 1) drop any lines of only dashes
+    clean = "\n".join(
+        ln for ln in clean.splitlines()
+        if not re.fullmatch(r'\s*-{2,}\s*', ln)
+    )
+    # 2) prefix every numbered item, existing bullet, or dash with a newline+bullet
+    clean = re.sub(r'\s*(?:\d+\.\s*|•\s*|-\s+)', r'\n• ', clean)
+    # 3) collapse multiple newlines
+    clean = re.sub(r'\n+', r'\n', clean).strip()
+    # 4) ensure every nonblank line starts with “• ”
+    bullets = []
+    for ln in clean.split("\n"):
+        txt = ln.strip()
+        if not txt:
+            continue
+        if not txt.startswith("•"):
+            txt = "• " + txt
+        bullets.append(txt)
+    recommendations = "\n".join(bullets)
 
-    # Generate PDF with ReportLab
-    pdf_path = "analytics_report.pdf"
+    # 8) Generate PDF
+    pdf_path = os.path.join(current_app.root_path, "analytics_report.pdf")
     c = canvas.Canvas(pdf_path, pagesize=letter)
 
     # Header
@@ -1309,43 +1364,53 @@ def download_report():
     # Report Title
     c.setFont("Helvetica-Bold", 14)
     c.drawString(100, 630, "Analysis Report")
+
+    # Wrapped Stats Text
     c.setFont("Helvetica", 12)
-    c.drawString(100, 610, f"Total Anomalies: {total_anomalies}")
-    c.drawString(100, 590, f"Unique Attack Types: {len(attack_distribution)}")
+    y = 610
+    for chunk in wrap(stats_text, width=90):
+        c.drawString(100, y, chunk)
+        y -= 14
 
-    # Embed bar chart
-    c.drawImage(chart_path, 100, 400, width=400, height=200)
+    # Chart
+    c.drawImage(chart_path, 100, y - 200, width=400, height=200)
+    y -= 220
 
-    # Recommendations heading
+    # Recommendations
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(100, 370, "Recommendations:")
-
-    # Switch back to normal font for the text
+    c.drawString(100, y, "Recommendations:")
+    y -= 20
     c.setFont("Helvetica", 10)
-    text_x = 100
-    text_y = 350
-    line_height = 14
 
-    recommendation_lines = recommendations.split("\n")
-    for line in recommendation_lines:
-        wrapped = wrap(line, width=90)
-        if not wrapped:  # if line is empty, add a blank line
-            wrapped = [""]
-        for subline in wrapped:
-            if text_y < 50:  # start a new page if near the bottom
+    for ln in recommendations.split("\n"):
+        indent = 15
+        for sub in wrap(ln, width=75):
+            if y < 50:
                 c.showPage()
+                y = 750
                 c.setFont("Helvetica", 10)
-                text_y = 750
-            c.drawString(text_x, text_y, subline)
-            text_y -= line_height
+            c.drawString(100 + indent, y, sub)
+            y -= 14
+        # extra spacing between bullets
+        y -= 6
 
     c.save()
 
-    # Remove chart image
+    # Cleanup chart image
     if os.path.exists(chart_path):
         os.remove(chart_path)
 
-    return send_file(pdf_path, as_attachment=True)
+    # 9) Send file
+    return send_file(
+        pdf_path,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="analytics_report.pdf"
+    )
+
+
+
+
 
 @app.route("/monitor", methods=["GET", "POST"])
 @login_required
