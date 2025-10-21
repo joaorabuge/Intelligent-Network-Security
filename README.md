@@ -51,3 +51,9 @@ This project is an **Intelligent Network Security Analysis Platform** designed t
 Then you will upload the csv files (dataset) present in this OneDrive link into the dataset folder: 
 https://1drv.ms/f/c/060eac35122b5005/EoYuAR0Hr-1CjOEMHTV-inUBWyWKtziddlI1sDdIySz3Pw?e=yd2znb
 
+2. After installing all the prerequistes, run the main python file and automatically a browser will open and you are all set to start using the Intelligent Network Security Analysis Platform
+      ```bash
+   cd Intelligent-Network-Security-1.0.1
+   python3 main.py
+   ```
+
